@@ -23,7 +23,8 @@ npm run phase:gate -- 0
 
 **Backend phases (0–4, 6):** focus audit on Convex auth boundaries, no public unauthenticated mutations, env vars documented.
 
-**Phase 5+:** run full Playwright a11y suite.
+**Phases 0–4:** `phase:gate` runs Playwright a11y so the shell never regresses while Convex backend work lands.  
+**Phase 5+:** same suite is **required** before merge.
 
 ---
 
@@ -34,10 +35,11 @@ npm run phase:gate -- 0
 | `npm run lint` | all |
 | `npm run test:deploy` | all |
 | `npm run test:convex-phase0` | 0 |
-| `npm run test:convex-phase1` | 1 (when added) |
+| `npm run test:convex-phase1` | 1 |
+| `npx convex run schemaInfo:phase1Status` | 1 |
 | `npm run convex:dev:once` | 0–6 |
 | `npx convex run users:bootstrapPing` | 0–3 |
-| `npm run test:a11y` | 5, 7, or any UI-touching PR |
+| `npm run test:a11y` | **0–4** (baseline), **5 & 7** (required), or any UI-touching PR |
 
 Gate script (single entry): **`npm run phase:gate -- <N>`**
 
@@ -67,7 +69,7 @@ Gate script (single entry): **`npm run phase:gate -- <N>`**
 | Phase | Extra verify |
 |-------|----------------|
 | **0** | `bootstrapPing` OK; dashboard shows deployment |
-| **1** | Schema visible in Convex dashboard |
+| **1** | Schema visible in Convex dashboard; `schemaInfo:phase1Status` lists 4 tables |
 | **2** | Test Google sign-in via Convex Auth |
 | **3** | `users.me` returns profile after login |
 | **4** | 11th message rejected in Convex |

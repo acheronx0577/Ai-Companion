@@ -13,6 +13,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const phase = Number.parseInt(process.argv[2] ?? "0", 10);
 
 const UI_PHASES = new Set([5, 7]);
+/** Phases 0–4: backend work but UI shell must not regress (Design Pro audit baseline). */
+const A11Y_BASELINE_MAX_PHASE = 4;
 
 function resolvePython() {
   const winPy = path.join(root, "venv", "Scripts", "python.exe");
@@ -77,29 +79,35 @@ function checkCleanup() {
 console.log(`Phase gate — phase ${phase} (UI-heavy: ${UI_PHASES.has(phase)})`);
 
 run("Python lint (ruff)", "npm run lint");
-run("Deploy + Convex layout tests", [
-  python,
-  "-m",
-  "unittest",
+const unittestModules = [
   "tests.test_serve",
   "tests.test_deploy",
   "tests.test_convex_phase0",
-  "-v",
-]);
+];
+if (phase >= 1) {
+  unittestModules.push("tests.test_convex_phase1");
+}
+
+run("Deploy + Convex tests", [python, "-m", "unittest", ...unittestModules, "-v"]);
 
 if (phase === 0) {
   run("Convex Phase 0 layout", "npm run test:convex-phase0");
   run("Convex deploy (once)", "npm run convex:dev:once");
   run("Convex bootstrapPing", "npx convex run users:bootstrapPing");
-} else if (phase >= 1 && phase <= 6) {
+} else if (phase === 1) {
+  run("Convex Phase 1 schema layout", "npm run test:convex-phase1");
+  run("Convex deploy (once)", "npm run convex:dev:once");
+  run("Convex phase1Status", "npx convex run schemaInfo:phase1Status");
+} else if (phase >= 2 && phase <= 6) {
   run("Convex deploy (once)", "npm run convex:dev:once");
   run("Convex bootstrapPing", "npx convex run users:bootstrapPing", { optional: phase > 3 });
 }
 
-if (UI_PHASES.has(phase)) {
-  run("Playwright accessibility", "npm run test:a11y");
-} else if (phase === 0) {
-  run("Playwright accessibility (baseline)", "npm run test:a11y", { optional: true });
+if (UI_PHASES.has(phase) || phase <= A11Y_BASELINE_MAX_PHASE) {
+  const label = UI_PHASES.has(phase)
+    ? "Playwright accessibility (required)"
+    : "Playwright accessibility (Design Pro baseline)";
+  run(label, "npm run test:a11y");
 }
 
 checkCleanup();

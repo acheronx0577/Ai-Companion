@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import { DAILY_MESSAGE_LIMIT } from "./constants";
 
-/** Phase 4 preview — mirrors DAILY_MESSAGE_LIMIT from usage_limit.py until usage.increment ships. */
+/** Phase 4 preview — daily cap from shared constants (usage_limit.py parity). */
 export const limitsPreview = query({
   args: {},
   returns: v.object({
@@ -9,7 +10,7 @@ export const limitsPreview = query({
     note: v.string(),
   }),
   handler: async () => ({
-    dailyLimit: 10,
+    dailyLimit: DAILY_MESSAGE_LIMIT,
     note: "Phase 4 will enforce limits in Convex mutations",
   }),
 });
