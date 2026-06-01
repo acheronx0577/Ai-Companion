@@ -51,7 +51,7 @@ In the service → **Environment**:
 | `GOOGLE_OAUTH_CLIENT_ID` | Yes |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Yes |
 | `DISABLE_PIPER` | `1` (recommended on Free tier) |
-| `CONVEX_URL` | Yes (Phase 5+) — **production** URL from [Convex dashboard](https://dashboard.convex.dev) → Settings → Production |
+| `CONVEX_URL` | Yes — **production** URL from [Convex dashboard](https://dashboard.convex.dev) → Settings → Production |
 | `CONVEX_SITE_URL` | Yes — same project, `https://….convex.site` (not `.cloud`) |
 | `PRODUCTION` | `1` (recommended — secure cookies behind HTTPS) |
 
@@ -151,4 +151,4 @@ python -m unittest tests.test_serve tests.test_deploy -v
 | Convex sign-in blocked | `CONVEX_URL` on Render must be **cloud** URL; JWT keys on **Production** deployment; not local `127.0.0.1:3210` |
 | No CSS | Ensure `static/` is in the repo (not in `.dockerignore`) |
 
-See also [DEPLOY.md](DEPLOY.md).
+See also [docs/README.md](docs/README.md) for all documentation links.

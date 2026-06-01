@@ -6,7 +6,7 @@
  *   node scripts/sync_convex_production.mjs https://ai-companion-ngbi.onrender.com
  *
  * Copies GOOGLE_OAUTH_* from .env → AUTH_GOOGLE_* and sets SITE_URL on prod deployment.
- * Also run: npm run convex:set-jwt-keys -- --prod   (after adding --prod support)
+ * Also run: npm run convex:set-jwt-keys:prod
  * Or set JWT_PRIVATE_KEY + JWKS in Convex dashboard → Production.
  */
 import { execFileSync, execSync } from "node:child_process";
@@ -67,9 +67,19 @@ convexEnvSet("AUTH_GOOGLE_ID", id);
 convexEnvSet("AUTH_GOOGLE_SECRET", secret);
 convexEnvSet("SITE_URL", siteUrl);
 
+const envLocalPath = path.join(root, ".env.local");
+let convexSiteHint = "https://YOUR-PROJECT.convex.site";
+if (fs.existsSync(envLocalPath)) {
+  const localEnv = parseEnv(fs.readFileSync(envLocalPath, "utf8"));
+  const site = (localEnv.CONVEX_SITE_URL || "").replace(/\/$/, "");
+  if (site.includes(".convex.site")) {
+    convexSiteHint = site;
+  }
+}
+
 console.log("\nDone. Also verify:");
 console.log("  1. npx convex deploy");
 console.log("  2. Render env: CONVEX_URL + CONVEX_SITE_URL from Convex dashboard (Production)");
 console.log(`  3. Google redirect: ${siteUrl}/auth/google/callback`);
-console.log("  4. Google redirect: https://YOUR-PROJECT.convex.site/api/auth/callback/google");
-console.log("  5. JWT_PRIVATE_KEY + JWKS on Convex Production: npm run convex:set-jwt-keys:prod");
+console.log(`  4. Google redirect: ${convexSiteHint}/api/auth/callback/google`);
+console.log("  5. JWT_PRIVATE_KEY + JWKS: npm run convex:set-jwt-keys:prod");

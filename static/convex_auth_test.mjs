@@ -1,6 +1,4 @@
-/**
- * Phase 3–4 — Convex Auth + usage test panel (React via esm.sh).
- */
+/** Convex Auth + usage debug panel (React via esm.sh). */
 import React, { useCallback, useEffect, useState } from "https://esm.sh/react@18.3.1";
 import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
 import { ConvexReactClient, useMutation, useQuery } from "https://esm.sh/convex@1.39.1/react?deps=react@18.3.1";
@@ -57,7 +55,7 @@ function ProfilePanel() {
 
   return (
     <section className="auth-test-profile" aria-live="polite">
-      <h2>Profile (Phase 3)</h2>
+      <h2>Profile</h2>
       {syncError ? <p className="missing" role="alert">{syncError}</p> : null}
       <div className="auth-test-actions">
         <button
@@ -105,7 +103,7 @@ function UsagePanel() {
 
   return (
     <section className="auth-test-profile" aria-live="polite">
-      <h2>Usage (Phase 4)</h2>
+      <h2>Usage</h2>
       <p className="auth-test-status">
         Trial limit: 10 messages/day. The 11th <code>usage.increment</code> should leave{" "}
         <code>remaining: 0</code> and <code>canSend: false</code>.

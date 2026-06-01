@@ -1,57 +1,21 @@
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import {
-  CHAT_RATE_MAX_REQUESTS,
-  CHAT_RATE_MIN_INTERVAL_SECONDS,
-  CHAT_RATE_WINDOW_SECONDS,
-  DAILY_MESSAGE_LIMIT,
-} from "./constants";
+import { DAILY_MESSAGE_LIMIT } from "./constants";
 import type { UsageStatus } from "./usageTypes";
 
 export function todayKey(now = Date.now()): string {
   return new Date(now).toISOString().slice(0, 10);
 }
 
-export function pruneRateTimestamps(timestamps: number[], nowMs: number): number[] {
-  const cutoff = nowMs - CHAT_RATE_WINDOW_SECONDS * 1000;
-  return timestamps.filter((stamp) => stamp > cutoff);
-}
-
-export function rateLimitFromTimestamps(
-  timestamps: number[],
-  nowMs: number,
-): UsageStatus["rate"] {
-  const pruned = pruneRateTimestamps(timestamps, nowMs);
-  let retryAfterSeconds = 0;
-  let allowed = true;
-
-  if (pruned.length > 0) {
-    const sinceLastMs = nowMs - pruned[pruned.length - 1]!;
-    if (sinceLastMs < CHAT_RATE_MIN_INTERVAL_SECONDS * 1000) {
-      allowed = false;
-      retryAfterSeconds = Math.max(
-        1,
-        Math.round(CHAT_RATE_MIN_INTERVAL_SECONDS - sinceLastMs / 1000),
-      );
-    }
-  }
-
-  if (pruned.length >= CHAT_RATE_MAX_REQUESTS) {
-    allowed = false;
-    const windowRetry = Math.max(
-      1,
-      Math.round(CHAT_RATE_WINDOW_SECONDS - (nowMs - pruned[0]!) / 1000),
-    );
-    retryAfterSeconds = Math.max(retryAfterSeconds, windowRetry);
-  }
-
+/** Per-message rate limits disabled; daily cap only. */
+export function rateLimitFromTimestamps(): UsageStatus["rate"] {
   return {
-    allowed,
-    retryAfterSeconds,
-    windowSeconds: CHAT_RATE_WINDOW_SECONDS,
-    maxPerWindow: CHAT_RATE_MAX_REQUESTS,
-    minIntervalSeconds: CHAT_RATE_MIN_INTERVAL_SECONDS,
-    requestsInWindow: pruned.length,
+    allowed: true,
+    retryAfterSeconds: 0,
+    windowSeconds: 0,
+    maxPerWindow: 0,
+    minIntervalSeconds: 0,
+    requestsInWindow: 0,
   };
 }
 
@@ -68,8 +32,8 @@ export function buildUsageStatus(used: number, rate: UsageStatus["rate"]): Usage
   };
 }
 
-export function guestUsageStatus(nowMs = Date.now()): UsageStatus {
-  return buildUsageStatus(0, rateLimitFromTimestamps([], nowMs));
+export function guestUsageStatus(): UsageStatus {
+  return buildUsageStatus(0, rateLimitFromTimestamps());
 }
 
 export async function getDailyUsageCount(
@@ -84,53 +48,13 @@ export async function getDailyUsageCount(
   return row?.messageCount ?? 0;
 }
 
-export async function getRateTimestamps(
-  ctx: QueryCtx | MutationCtx,
-  userId: Id<"users">,
-): Promise<number[]> {
-  const row = await ctx.db
-    .query("chatRateState")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .unique();
-  return row?.timestamps ?? [];
-}
-
 export async function computeUsageStatusForUser(
   ctx: QueryCtx | MutationCtx,
   userId: Id<"users">,
   nowMs = Date.now(),
 ): Promise<UsageStatus> {
   const used = await getDailyUsageCount(ctx, userId, todayKey(nowMs));
-  const timestamps = await getRateTimestamps(ctx, userId);
-  const rate = rateLimitFromTimestamps(timestamps, nowMs);
-  return buildUsageStatus(used, rate);
-}
-
-export async function recordRateHit(
-  ctx: MutationCtx,
-  userId: Id<"users">,
-  nowMs: number,
-): Promise<void> {
-  const existing = await ctx.db
-    .query("chatRateState")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .unique();
-
-  const pruned = pruneRateTimestamps(existing?.timestamps ?? [], nowMs);
-  pruned.push(nowMs);
-
-  if (existing) {
-    await ctx.db.patch(existing._id, {
-      timestamps: pruned,
-      updatedAt: nowMs,
-    });
-  } else {
-    await ctx.db.insert("chatRateState", {
-      userId,
-      timestamps: pruned,
-      updatedAt: nowMs,
-    });
-  }
+  return buildUsageStatus(used, rateLimitFromTimestamps());
 }
 
 export async function incrementDailyUsage(

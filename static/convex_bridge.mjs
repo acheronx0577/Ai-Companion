@@ -1,5 +1,5 @@
 /**
- * Headless Convex Auth + usage bridge for vanilla app.js (Phase 5).
+ * Headless Convex Auth + usage bridge for vanilla app.js.
  */
 import React, { useEffect } from "https://esm.sh/react@18.3.1";
 import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
@@ -55,10 +55,9 @@ function BridgeInner() {
   const profile = useQuery(api.users.me);
   const usage = useQuery(api.usage.status);
   const upsert = useMutation(api.users.upsertFromAuth);
-  const increment = useMutation(api.usage.increment);
   useEffect(() => {
-    actionsRef.current = { signIn, signOut, increment, upsert };
-  }, [signIn, signOut, increment, upsert]);
+    actionsRef.current = { signIn, signOut, upsert };
+  }, [signIn, signOut, upsert]);
 
   useEffect(() => {
     tokenRef.current = authToken;
@@ -151,13 +150,6 @@ export async function initWakuConvexBridge(convexUrl) {
           picture: user.picture,
         }),
       });
-    },
-    async incrementUsage() {
-      const actions = actionsRef?.current;
-      if (!actions?.increment) {
-        return null;
-      }
-      return await actions.increment({});
     },
     async refresh() {
       const actions = actionsRef?.current;

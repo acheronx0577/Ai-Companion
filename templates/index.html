@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-asset-version="20260602j">
+<html lang="en" data-asset-version="20260602n">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +7,7 @@
     <meta name="color-scheme" content="dark">
     <title>WakuWaku</title>
     <link rel="icon" type="image/png" href="/static/images/char-mouth-closed.png">
-    <link rel="stylesheet" href="/static/style.css?v=20260602j">
+    <link rel="stylesheet" href="/static/style.css?v=20260602n">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -94,8 +94,18 @@
             <section id="message-list" class="message-list" aria-live="polite" aria-busy="false" aria-label="Chat messages"></section>
 
             <footer class="chat-input-area">
-                <label class="visually-hidden" for="text-input">Message to WakuWaku</label>
-                <textarea id="text-input" placeholder="Ask me anything..." autocomplete="off" rows="1"></textarea>
+                <div class="chat-input-stack">
+                    <label class="visually-hidden" for="text-input">Message to WakuWaku</label>
+                    <textarea
+                        id="text-input"
+                        placeholder="Ask me anything (up to 100 words)..."
+                        autocomplete="off"
+                        rows="1"
+                        aria-describedby="message-word-hint"></textarea>
+                    <p id="message-word-hint" class="message-word-hint" aria-live="polite">
+                        0 / 100 words
+                    </p>
+                </div>
                 <div class="send-button-wrap">
                     <button id="send-button" type="button" aria-label="Send message">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24px" height="24px" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
@@ -111,7 +121,7 @@
                 <div class="character-viewer">
                     <img
                         id="character-image"
-                        src="/static/images/char-mouth-closed.png?v=20260602j"
+                        src="/static/images/char-mouth-closed.png?v=20260602n"
                         alt="WakuWaku"
                         width="480"
                         height="640"
@@ -130,11 +140,11 @@
         };
     </script>
     <script type="module">
-        import { initWakuConvexBridge } from '/static/convex_bridge.mjs?v=20260602j';
+        import { initWakuConvexBridge } from '/static/convex_bridge.mjs?v=20260602n';
         if (window.__WAKU_ENV__?.convexEnabled && window.__WAKU_ENV__?.convexUrl) {
             await initWakuConvexBridge(window.__WAKU_ENV__.convexUrl);
         }
     </script>
-    <script src="/static/app.js?v=20260602j" defer></script>
+    <script src="/static/app.js?v=20260602n" defer></script>
 </body>
 </html>

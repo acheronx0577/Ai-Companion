@@ -35,12 +35,7 @@ requireIn(schemaPath, "schema", [
   /index\("by_googleSub"|authTables/,
 ]);
 
-requireIn(constantsPath, "constants", [
-  "DAILY_MESSAGE_LIMIT = 10",
-  "CHAT_RATE_MAX_REQUESTS = 8",
-  "CHAT_RATE_WINDOW_SECONDS = 60",
-  "CHAT_RATE_MIN_INTERVAL_SECONDS = 2",
-]);
+requireIn(constantsPath, "constants", ["DAILY_MESSAGE_LIMIT = 10"]);
 
 if (failed > 0) {
   process.exit(1);

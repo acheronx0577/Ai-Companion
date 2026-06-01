@@ -1,4 +1,4 @@
-"""Flask auth: Google OAuth session routes and Convex session bridge (Phase 5)."""
+"""Flask auth: Google OAuth fallback and Convex session bridge."""
 
 import os
 import secrets
@@ -108,7 +108,7 @@ def auth_google_callback():
 
 @auth_bp.route("/convex-bridge", methods=["POST"])
 def auth_convex_bridge():
-    """Phase 5 — set Flask session after Convex Auth (enables /chat until Phase 6)."""
+    """Set Flask session after Convex Auth so /chat can use the session."""
     payload = request.get_json(silent=True) or {}
     google_sub = (payload.get("googleSub") or payload.get("id") or "").strip()
     if not google_sub:

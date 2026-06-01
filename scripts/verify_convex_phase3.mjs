@@ -29,7 +29,7 @@ requireIn("convex/usersInfo.ts", "usersInfo.ts", ["phase3Status", "users.upsertF
 requireIn("templates/convex_auth_test.html", "convex_auth_test.html", [
   "convex-auth-root",
   "convex_auth_test.mjs",
-  /Phase 3/i,
+  "Convex auth",
 ]);
 requireIn("static/convex_auth_test.mjs", "convex_auth_test.mjs", [
   "upsertFromAuth",

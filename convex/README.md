@@ -1,94 +1,69 @@
-# Convex backend (WakuWaku)
+# Convex backend
 
-Phased rollout: see [ARCHITECTURE.md](../ARCHITECTURE.md).
+Auth: [CONVEX_AUTH.md](../CONVEX_AUTH.md) · Deploy: [RENDER.md](../RENDER.md) · Tests: [docs/PHASE_GATE.md](../docs/PHASE_GATE.md)
 
-## Phase 0 — local dev
+## How it works
+
+```text
+Browser  →  Convex (sign-in, profile, usage limits)
+         →  Flask (chat AI, TTS, serves the web page)
+```
+
+| Stored in Convex | Handled by Flask |
+|------------------|------------------|
+| Google sign-in (Convex Auth) | Groq/Gemini chat (`/chat`) |
+| User profile (`users`) | Piper/browser TTS (`/tts`) |
+| Daily message limit | Session bridge (`/auth/convex-bridge`) |
+
+**Limits:** 10 messages per day (see `constants.ts`). Each message is capped at 100 words (enforced in Flask — see `message_limits.py`).
+
+Chat history is in the browser (`localStorage`), not Convex yet.
+
+---
+
+## Local dev
 
 ```bash
 npm install
-npm run convex:dev          # watch mode (local deployment by default)
-# or
-npm run convex:dev:once     # push once and exit
+npm run dev          # from repo root — Convex + Flask
 ```
 
-After first run, `.env.local` contains `CONVEX_URL` and `CONVEX_DEPLOYMENT`.
-
-Optional: `npx convex login` to link a cloud project instead of anonymous local.
-
-## Verify Phase 0
+First run creates `.env.local` with `CONVEX_URL` and `CONVEX_SITE_URL`.
 
 ```bash
-npm run phase:gate -- 0
+node scripts/sync_convex_auth_env.mjs
+npm run convex:set-jwt-keys
 ```
 
-Or manually:
+---
+
+## Deploy backend
 
 ```bash
-npm run test:convex-phase0
-python -m unittest tests.test_convex_phase0 -v
-npx convex run users:bootstrapPing
+npx convex deploy
+npm run convex:set-jwt-keys:prod
+node scripts/sync_convex_production.mjs https://YOUR-APP.onrender.com
 ```
 
-## Phase 2 — Convex Auth (Google)
+---
 
-See [CONVEX_AUTH.md](../CONVEX_AUTH.md). Test page: http://127.0.0.1:5000/convex-auth-test
+## Main files
 
-```bash
-npm run test:convex-phase2
-npx convex run authInfo:phase2Status
-```
+| File | Purpose |
+|------|---------|
+| `schema.ts` | Database tables |
+| `constants.ts` | Limit numbers |
+| `auth.ts` | Google sign-in |
+| `users.ts` | Profile |
+| `usage.ts` | Daily message limit |
+| `chatHttp.ts` | Flask calls this before each chat message |
 
-## Phase 3 — User sync
-
-`users.upsertFromAuth` patches profile fields from the auth identity; `users.me` returns the current user.
-
-```bash
-npm run test:convex-phase3
-npx convex run usersInfo:phase3Status
-npx convex run users:me   # null when not authenticated from CLI
-```
-
-## Phase 4 — usage limits
-
-`usage.status` (read-only) and `usage.increment` (auth required). Rate limits stored in `chatRateState`.
+## Useful commands
 
 ```bash
-npm run test:convex-phase4
+npx convex run users:me
 npx convex run usageInfo:phase4Status
-npx convex run usage:checkDailyLimit '{"used":10}'
-```
-
-## Phase 6 — Flask `/chat` bridge
-
-Flask calls `POST {CONVEX_SITE_URL}/api/chat/increment-usage` with the user's Convex Auth JWT before running the LLM.
-
-```bash
-npm run test:convex-phase6
 npx convex run chatBridgeInfo:phase6Status
+npx convex run jwtDebug:testJwtKey
+npm run test:convex-phase6
 ```
-
-When `CONVEX_URL` is in `.env.local`, `USE_CONVEX_USAGE` defaults on (set `USE_CONVEX_USAGE=0` to use local `daily_usage.json`).
-
-## Phase 1 — schema
-
-Tables: `users`, `dailyUsage`, `chatSessions`, `chatMessages` (chat tables stubbed for Phase 4b).
-
-Constants in `constants.ts` mirror `usage_limit.py`.
-
-```bash
-npm run test:convex-phase1
-npm run convex:dev:once
-npx convex run schemaInfo:phase1Status
-```
-
-## Layout
-
-| File | Phase | Purpose |
-|------|-------|---------|
-| `schema.ts` | 1 | Tables + indexes |
-| `constants.ts` | 1 | Daily + rate limits |
-| `schemaInfo.ts` | 1 | `phase1Status` query |
-| `auth.ts` | 2 | Convex Auth + Google |
-| `users.ts` | 3 | Profile sync |
-| `usage.ts` | 4 | Daily limit + rate limit |
-| `http.ts` | 6 | Flask HTTP bridge |

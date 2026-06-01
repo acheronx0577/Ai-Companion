@@ -1,98 +1,84 @@
-# Convex Auth setup (Phase 2)
+# Convex Auth setup
 
-Google sign-in via **Convex Auth** runs alongside Flask OAuth until Phase 5.
+Google sign-in uses **Convex Auth** in the main app (sidebar button). Flask `/auth/google` is only a fallback when Convex is not configured.
 
-## 1. Convex environment variables
+**Production:** see [RENDER.md](RENDER.md) §4 — different `SITE_URL` and redirect URIs.
 
-In the [Convex dashboard](https://dashboard.convex.dev) (or via CLI), set:
+---
+
+## 1. Convex environment variables (local dev)
+
+In the [Convex dashboard](https://dashboard.convex.dev) → **Development** (or CLI):
 
 | Variable | Value |
 |----------|--------|
-| `AUTH_GOOGLE_ID` | Same Client ID as `GOOGLE_OAUTH_CLIENT_ID` |
-| `AUTH_GOOGLE_SECRET` | Same secret as `GOOGLE_OAUTH_CLIENT_SECRET` |
-| `SITE_URL` | `http://127.0.0.1:5000` (local Flask origin) |
-| `JWT_PRIVATE_KEY` | From `node scripts/generate_auth_keys.mjs` |
-| `JWKS` | From same script (second line) |
+| `AUTH_GOOGLE_ID` | Same as `GOOGLE_OAUTH_CLIENT_ID` in `.env` |
+| `AUTH_GOOGLE_SECRET` | Same as `GOOGLE_OAUTH_CLIENT_SECRET` |
+| `SITE_URL` | `http://127.0.0.1:5000` |
+| `JWT_PRIVATE_KEY` | From `npm run convex:set-jwt-keys` |
+| `JWKS` | Set together with the script above |
 
-CLI examples:
-
-```bash
-npx convex env set AUTH_GOOGLE_ID "your-client-id.apps.googleusercontent.com"
-npx convex env set AUTH_GOOGLE_SECRET "your-secret"
-npx convex env set SITE_URL http://127.0.0.1:5000
-```
-
-Generate JWT keys (run once, paste both lines into Convex env):
-
-```bash
-node scripts/generate_auth_keys.mjs
-```
-
-Alternatively, you can automatically generate and set both JWT keys in Convex using the command below (recommended on Windows to avoid CLI argument flag issues):
-
-```bash
-npm run convex:set-jwt-keys
-```
-
-Always restart `npx convex dev` after setting or changing any Convex environment variables.
-
-Optional: sync Google vars from `.env`:
+Quick sync from `.env`:
 
 ```bash
 node scripts/sync_convex_auth_env.mjs
+npm run convex:set-jwt-keys
 ```
 
-## 2. Google Cloud — add Convex redirect URI
+Restart after any Convex env change: stop and run `npm run dev` again.
 
-In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth client → **Authorized redirect URIs**, add:
+**Production JWT** (different deployment):
 
-**Local Convex (from `.env.local` `CONVEX_SITE_URL`):**
-
-```text
-http://127.0.0.1:3211/api/auth/callback/google
+```bash
+npm run convex:set-jwt-keys:prod
 ```
 
-**Cloud deployment:**
+Do **not** use `npm run convex:set-jwt-keys -- --prod` — npm breaks the `--prod` flag.
 
-```text
-https://YOUR-DEPLOYMENT.convex.site/api/auth/callback/google
-```
+---
 
-Keep existing Flask URI:
+## 2. Google Cloud — redirect URIs
+
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth client → **Authorized redirect URIs**:
+
+**Local:**
 
 ```text
 http://127.0.0.1:5000/auth/google/callback
-https://YOUR-APP.onrender.com/auth/google/callback
+http://127.0.0.1:3211/api/auth/callback/google
 ```
 
-## 3. Test sign-in + profile sync (Phase 3)
+**Production** (replace hostnames):
 
-**One terminal (recommended):**
+```text
+https://YOUR-APP.onrender.com/auth/google/callback
+https://YOUR-PROJECT.convex.site/api/auth/callback/google
+```
+
+Use `127.0.0.1`, not `localhost`, for local sign-in.
+
+---
+
+## 3. Run and test
 
 ```bash
 npm run dev
 ```
 
-**Or two terminals:**
+Open http://127.0.0.1:5000 — sign in from the sidebar.
 
-```bash
-npm run convex:dev
-python app.py
-```
+Optional debug page: http://127.0.0.1:5000/convex-auth-test
 
-Open http://127.0.0.1:5000/convex-auth-test → **Sign in with Google (Convex)**.
+Check data: Convex dashboard → **Data** → `users`, `dailyUsage`, `chatRateState`.
 
-After redirect, the page auto-calls `users.upsertFromAuth` and shows `users.me` JSON.
-
-**Phase 4:** Use **Test increment** to exercise `usage.increment` until `remaining: 0` (11th message blocked).
-
-After success, check Convex dashboard → **Data** → `users`, `dailyUsage`, `chatRateState`.
+---
 
 ## 4. Verify
 
 ```bash
-npm run phase:gate -- 2   # Auth wiring
-npm run phase:gate -- 3   # User sync + test page
+npm run phase:gate -- 2
+npx convex run jwtDebug:testJwtKey
 npx convex run authInfo:phase2Status
-npx convex run usersInfo:phase3Status
 ```
+
+JWT health: `configured: true`, `valid: true`.

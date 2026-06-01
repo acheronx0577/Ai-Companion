@@ -26,11 +26,11 @@ requireIn("convex/usage.ts", "usage.ts", [
 ]);
 requireIn("convex/usageLogic.ts", "usageLogic.ts", [
   "computeUsageStatusForUser",
-  "recordRateHit",
+  "rateLimitFromTimestamps",
 ]);
 requireIn("static/convex_auth_test.mjs", "convex_auth_test.mjs", [
   "usage.increment",
-  "Usage (Phase 4)",
+  "<h2>Usage</h2>",
 ]);
 requireIn("convex/schema.ts", "schema.ts", ["chatRateState: defineTable", "dailyUsage: defineTable"]);
 requireIn("convex/usageInfo.ts", "usageInfo.ts", ["phase4Status", "usage.increment"]);

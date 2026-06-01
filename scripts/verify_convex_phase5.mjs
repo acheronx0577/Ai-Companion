@@ -24,7 +24,6 @@ requireIn("static/convex_bridge.mjs", "convex_bridge.mjs", [
   "syncFlaskSession",
   "/auth/convex-bridge",
   "api.usage.status",
-  "api.usage.increment",
 ]);
 requireIn("static/app.js", "app.js", [
   "__WAKU_ENV__",

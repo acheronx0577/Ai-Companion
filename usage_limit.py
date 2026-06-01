@@ -1,9 +1,8 @@
-"""Daily message limits and chat rate limiting for Flask (file-backed until Convex Phase 5+)."""
+"""Daily message limits (file-backed fallback when Convex usage is off)."""
 
 import hashlib
 import json
 import os
-import time
 from datetime import date
 from pathlib import Path
 from threading import Lock
@@ -11,9 +10,6 @@ from threading import Lock
 from flask import request, session
 
 DAILY_MESSAGE_LIMIT = 10
-CHAT_RATE_MAX_REQUESTS = 999999
-CHAT_RATE_WINDOW_SECONDS = 60
-CHAT_RATE_MIN_INTERVAL_SECONDS = 0
 USAGE_STORE_PATH = Path("data/daily_usage.json")
 usage_lock = Lock()
 
@@ -23,10 +19,6 @@ def use_convex_usage() -> bool:
     from convex_usage import use_convex_usage as _use_convex_usage
 
     return _use_convex_usage()
-
-
-rate_lock = Lock()
-rate_buckets: dict[str, list[float]] = {}
 
 
 def get_client_ip() -> str:
@@ -84,63 +76,16 @@ def get_usage_count_for_current_request() -> int:
         return int(day_counts.get(client_key, 0))
 
 
-def _prune_rate_timestamps(timestamps: list[float], now: float) -> list[float]:
-    cutoff = now - CHAT_RATE_WINDOW_SECONDS
-    return [stamp for stamp in timestamps if stamp > cutoff]
-
-
 def rate_limit_status_for_current_request() -> dict:
-    client_key = get_usage_client_key()
-    now = time.monotonic()
-
-    with rate_lock:
-        timestamps = _prune_rate_timestamps(rate_buckets.get(client_key, []), now)
-        rate_buckets[client_key] = timestamps
-
-        retry_after_seconds = 0
-        allowed = True
-
-        if timestamps:
-            since_last = now - timestamps[-1]
-            if since_last < CHAT_RATE_MIN_INTERVAL_SECONDS:
-                allowed = False
-                retry_after_seconds = max(
-                    1,
-                    round(CHAT_RATE_MIN_INTERVAL_SECONDS - since_last),
-                )
-
-        if len(timestamps) >= CHAT_RATE_MAX_REQUESTS:
-            allowed = False
-            window_retry = max(
-                1, round(CHAT_RATE_WINDOW_SECONDS - (now - timestamps[0]))
-            )
-            retry_after_seconds = max(retry_after_seconds, window_retry)
-
-        return {
-            "allowed": allowed,
-            "retryAfterSeconds": retry_after_seconds,
-            "windowSeconds": CHAT_RATE_WINDOW_SECONDS,
-            "maxPerWindow": CHAT_RATE_MAX_REQUESTS,
-            "minIntervalSeconds": CHAT_RATE_MIN_INTERVAL_SECONDS,
-            "requestsInWindow": len(timestamps),
-        }
-
-
-def record_rate_limit_hit_for_current_request() -> None:
-    client_key = get_usage_client_key()
-    now = time.monotonic()
-    with rate_lock:
-        timestamps = _prune_rate_timestamps(rate_buckets.get(client_key, []), now)
-        timestamps.append(now)
-        rate_buckets[client_key] = timestamps
-
-
-def rate_limit_message(retry_after_seconds: int) -> str:
-    wait = max(1, retry_after_seconds)
-    return (
-        f"Meow, you're sending messages too fast! "
-        f"Please wait {wait} second{'s' if wait != 1 else ''} and try again."
-    )
+    """Per-message rate limits disabled; daily cap only."""
+    return {
+        "allowed": True,
+        "retryAfterSeconds": 0,
+        "windowSeconds": 0,
+        "maxPerWindow": 0,
+        "minIntervalSeconds": 0,
+        "requestsInWindow": 0,
+    }
 
 
 def usage_status_for_current_request() -> dict:
@@ -156,7 +101,7 @@ def usage_status_for_current_request() -> dict:
     return {
         **daily,
         "rate": rate,
-        "canSend": daily["allowed"] and rate["allowed"],
+        "canSend": daily["allowed"],
     }
 
 
@@ -173,5 +118,4 @@ def increment_usage_for_current_request() -> dict:
         day_counts[client_key] = int(day_counts.get(client_key, 0)) + 1
         store[today] = day_counts
         _save_store(store)
-    record_rate_limit_hit_for_current_request()
     return usage_status_for_current_request()

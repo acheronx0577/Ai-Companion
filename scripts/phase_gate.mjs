@@ -150,6 +150,7 @@ if (phase === 0) {
 }
 
 if (UI_PHASES.has(phase) || phase <= A11Y_BASELINE_MAX_PHASE) {
+  run("Message word limits (100 cap)", "npm run test:message-limits");
   const label = UI_PHASES.has(phase)
     ? "Playwright accessibility (required)"
     : "Playwright accessibility (Design Pro baseline)";
@@ -158,4 +159,4 @@ if (UI_PHASES.has(phase) || phase <= A11Y_BASELINE_MAX_PHASE) {
 
 checkCleanup();
 
-console.log(`\n✅ Phase ${phase} gate passed. Safe to commit after manual audit notes in docs/PHASE_GATE.md.\n`);
+console.log(`\n✅ Gate passed (level ${phase}). See docs/PHASE_GATE.md.\n`);

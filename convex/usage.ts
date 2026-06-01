@@ -7,7 +7,6 @@ import {
   computeUsageStatusForUser,
   guestUsageStatus,
   incrementDailyUsage,
-  recordRateHit,
   todayKey,
 } from "./usageLogic";
 import { usageStatusValidator } from "./usageTypes";
@@ -25,10 +24,7 @@ export const status = query({
   },
 });
 
-/**
- * Increment daily message count when allowed; always records rate-limit window hit on success.
- * Returns current status (unchanged counts when daily or rate limit blocks send).
- */
+/** Increment daily message count when allowed. Returns current status when blocked. */
 export const increment = mutation({
   args: {},
   returns: usageStatusValidator,
@@ -47,7 +43,6 @@ export const increment = mutation({
 
     const date = todayKey(nowMs);
     await incrementDailyUsage(ctx, userId, date, nowMs);
-    await recordRateHit(ctx, userId, nowMs);
     return await computeUsageStatusForUser(ctx, userId, nowMs);
   },
 });

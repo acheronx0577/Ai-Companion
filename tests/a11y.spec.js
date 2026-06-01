@@ -51,6 +51,8 @@ test.describe('accessibility', () => {
     test('guest shell exposes sign-in affordances', async ({ page }) => {
         await page.goto('/');
         await expect(page.locator('.app-shell')).toHaveClass(/requires-auth/);
+        await expect(page.locator('#message-word-hint')).toBeVisible();
+        await expect(page.locator('#message-word-hint')).toHaveText(/100 words/);
         await expect(page.locator('#text-input')).toBeDisabled();
         await expect(page.locator('#new-chat-button')).toBeDisabled();
         await expect(page.locator('#google-sign-in-button')).toBeVisible();
@@ -141,7 +143,7 @@ test.describe('accessibility', () => {
 
     test('convex auth test exposes sign-in and profile region', async ({ page }) => {
         await page.goto('/convex-auth-test');
-        await expect(page.locator('h1')).toContainText(/Phase 3/i);
+        await expect(page.locator('h1')).toContainText(/Convex auth/i);
         const signIn = page.getByRole('link', { name: /Sign in with Google/i });
         const hasSignIn = (await signIn.count()) > 0;
         const hasSetupAlert = (await page.locator('.auth-test .missing[role="alert"]').count()) > 0;

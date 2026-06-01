@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en" data-asset-version="20260601c">
+<html lang="en" data-asset-version="20260602m">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#040404">
     <meta name="color-scheme" content="dark">
-    <title>WakuWaku — Convex test (Phase 3–4)</title>
-    <link rel="stylesheet" href="/static/style.css?v=20260601c">
+    <title>WakuWaku — Convex auth test</title>
+    <link rel="stylesheet" href="/static/style.css?v=20260602l">
     <style>
         .auth-test {
             max-width: 36rem;
@@ -70,8 +70,8 @@
 </head>
 <body>
     <main class="auth-test" aria-labelledby="auth-test-title">
-        <h1 id="auth-test-title">Convex — Phase 3–4 test</h1>
-        <p>Sign in with Convex Google OAuth, sync profile (<code>users.me</code>), then test daily usage (<code>usage.status</code> / <code>usage.increment</code>). The main app still uses Flask until Phase 5.</p>
+        <h1 id="auth-test-title">Convex auth &amp; usage test</h1>
+        <p>Sign in with Google, check profile (<code>users.me</code>), and try usage (<code>usage.status</code> / <code>usage.increment</code>). For normal use, go back to the <a href="/">main app</a>.</p>
         {% if convex_site_url and convex_url %}
         <p>Convex site: <code>{{ convex_site_url }}</code></p>
         <div class="auth-test-actions">
@@ -79,7 +79,7 @@
             <a href="/">Back to WakuWaku app</a>
         </div>
         <div id="convex-auth-root" data-convex-url="{{ convex_url }}"></div>
-        <script type="module" src="/static/convex_auth_test.mjs?v=20260601c"></script>
+        <script type="module" src="/static/convex_auth_test.mjs?v=20260602l"></script>
         {% elif convex_site_url %}
         <p class="missing" role="alert">CONVEX_URL is not set in <code>.env.local</code>. Run <code>npm run convex:dev</code>.</p>
         <div class="auth-test-actions">

@@ -3,7 +3,7 @@ import { api } from "./_generated/api";
 
 /**
  * Phase 6 — Flask `/chat` calls this with the user's Convex Auth JWT.
- * Runs the same logic as `usage.increment` (daily cap + rate limits).
+ * Runs the same logic as `usage.increment` (daily message cap).
  */
 export const incrementUsageForChat = httpAction(async (ctx, request) => {
   if (request.method !== "POST") {

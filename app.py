@@ -13,11 +13,14 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 from auth import auth_bp, init_auth, user_is_authenticated
 from chat_llm import chat_provider, chat_with_groq
 import convex_usage
+from message_limits import (
+    MAX_MESSAGE_WORDS,
+    message_exceeds_word_limit,
+    word_limit_message,
+)
 from usage_limit import (
     DAILY_MESSAGE_LIMIT,
     increment_usage_for_current_request,
-    rate_limit_message,
-    rate_limit_status_for_current_request,
     usage_status_for_current_request,
 )
 
@@ -189,7 +192,7 @@ def index():
 
 @app.route("/convex-auth-test")
 def convex_auth_test():
-    """Phase 2–3: Convex Auth test + users.me profile panel."""
+    """Debug page for Convex Auth and usage (optional; main app is /)."""
     load_dotenv(".env.local")
     convex_site_url = os.environ.get("CONVEX_SITE_URL", "").strip().rstrip("/")
     convex_url = os.environ.get("CONVEX_URL", "").strip()
@@ -288,6 +291,16 @@ async def chat():
     if not user_message:
         return jsonify({"error": "Message is required", "response": ""}), 400
 
+    if message_exceeds_word_limit(user_message):
+        return jsonify(
+            {
+                "error": f"Message exceeds {MAX_MESSAGE_WORDS} word limit.",
+                "response": word_limit_message(),
+                "messageTooLong": True,
+                "maxWords": MAX_MESSAGE_WORDS,
+            }
+        ), 400
+
     if not user_is_authenticated():
         return jsonify(
             {
@@ -340,19 +353,6 @@ async def chat():
             ), 503
 
         if not usage.get("canSend", False):
-            rate = usage.get("rate") or {}
-            if isinstance(rate, dict) and not rate.get("allowed", True):
-                return jsonify(
-                    {
-                        "error": "Too many messages sent too quickly.",
-                        "response": rate_limit_message(
-                            int(rate.get("retryAfterSeconds") or 1)
-                        ),
-                        "usage": usage,
-                        "rateLimit": rate,
-                        "rateLimited": True,
-                    }
-                ), 429
             return jsonify(
                 {
                     "error": "Daily trial limit reached for this connection.",
@@ -369,19 +369,6 @@ async def chat():
                     "response": trial_limit_message(),
                     "usage": usage,
                     "limitReached": True,
-                }
-            ), 429
-
-        rate = rate_limit_status_for_current_request()
-        if not rate["allowed"]:
-            usage = usage_status_for_current_request()
-            return jsonify(
-                {
-                    "error": "Too many messages sent too quickly.",
-                    "response": rate_limit_message(rate["retryAfterSeconds"]),
-                    "usage": usage,
-                    "rateLimit": rate,
-                    "rateLimited": True,
                 }
             ), 429
 

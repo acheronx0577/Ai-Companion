@@ -1,11 +1,13 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260602j';
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260602n';
+    const MAX_MESSAGE_WORDS = 100;
     const wakuEnv = window.__WAKU_ENV__ || {};
     const useConvexFrontend = Boolean(wakuEnv.convexEnabled && wakuEnv.convexUrl);
     let convexUnsubscribe = null;
     let lastSyncedUserId = null;
     const appShell = document.querySelector('.app-shell');
     const textInput = document.getElementById('text-input');
+    const messageWordHint = document.getElementById('message-word-hint');
     const sendButton = document.getElementById('send-button');
     const stopButton = document.getElementById('stop-button');
     const sendButtonWrap = document.querySelector('.send-button-wrap');
@@ -77,11 +79,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         canSend: true,
         rate: null
     };
-    let rateLimitUntil = 0;
-    let rateLimitCooldownTimer = null;
-    let rateLimitUiTimer = null;
     let chatHistoryHydrated = false;
-    let rateCooldownArmedForStaleSnapshot = false;
 
     function formatConversationMeta(createdAt) {
         const date = new Date(createdAt);
@@ -113,71 +111,80 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     }
 
-    function scheduleRateLimitCooldownRefresh() {
-        if (rateLimitCooldownTimer) {
-            clearTimeout(rateLimitCooldownTimer);
-            rateLimitCooldownTimer = null;
-        }
-        if (rateLimitUiTimer) {
-            clearInterval(rateLimitUiTimer);
-            rateLimitUiTimer = null;
-        }
+    function getWordLimitMessage() {
+        return (
+            `Meow! That message is too long — please keep it to ${MAX_MESSAGE_WORDS} words or fewer. `
+            + 'Try sending a shorter message.'
+        );
+    }
 
-        const waitMs = rateLimitUntil - Date.now();
-        if (waitMs <= 0) {
+    function countWords(text) {
+        const trimmed = (text || '').trim();
+        if (!trimmed) {
+            return 0;
+        }
+        return trimmed.split(/\s+/).length;
+    }
+
+    function truncateToWordLimit(text, maxWords = MAX_MESSAGE_WORDS) {
+        const trimmed = (text || '').trim();
+        if (!trimmed) {
+            return '';
+        }
+        const words = trimmed.split(/\s+/);
+        if (words.length <= maxWords) {
+            return text;
+        }
+        return `${words.slice(0, maxWords).join(' ')} `;
+    }
+
+    function enforceMessageWordLimit() {
+        const words = countWords(textInput.value);
+        if (words > MAX_MESSAGE_WORDS) {
+            const cursor = textInput.selectionStart;
+            textInput.value = truncateToWordLimit(textInput.value);
+            const nextCursor = Math.min(cursor, textInput.value.length);
+            textInput.setSelectionRange(nextCursor, nextCursor);
+        }
+        updateMessageWordHint();
+        resizeTextInput();
+    }
+
+    function updateMessageWordHint() {
+        if (!messageWordHint) {
             return;
         }
+        const words = countWords(textInput.value);
+        const over = words > MAX_MESSAGE_WORDS;
+        messageWordHint.classList.toggle('is-over-limit', over);
+        messageWordHint.textContent = over
+            ? `${words} / ${MAX_MESSAGE_WORDS} words — too long`
+            : `${words} / ${MAX_MESSAGE_WORDS} words`;
+    }
 
-        rateLimitUiTimer = setInterval(() => {
-            if (Date.now() >= rateLimitUntil) {
-                clearInterval(rateLimitUiTimer);
-                rateLimitUiTimer = null;
-                refreshUsageStatus();
-                return;
-            }
-            updateUsageLimitUi();
-        }, 1000);
+    function resizeTextInput() {
+        textInput.style.height = 'auto';
+        textInput.style.height = `${textInput.scrollHeight}px`;
+    }
 
-        rateLimitCooldownTimer = setTimeout(() => {
-            rateLimitCooldownTimer = null;
-            if (rateLimitUiTimer) {
-                clearInterval(rateLimitUiTimer);
-                rateLimitUiTimer = null;
-            }
-            refreshUsageStatus();
-        }, waitMs + 100);
+    function messageWithinWordLimit(text) {
+        return countWords(text) <= MAX_MESSAGE_WORDS;
     }
 
     function applyUsageState(next) {
         if (!next) {
             return;
         }
-        const rate = next.rate && typeof next.rate === 'object' ? next.rate : null;
         usageState = {
             limit: Number(next.limit) || DAILY_MESSAGE_LIMIT,
             used: Math.max(0, Number(next.used) || 0),
             remaining: Math.max(0, Number(next.remaining) || 0),
             allowed: Boolean(next.allowed),
-            rate,
+            rate: next.rate && typeof next.rate === 'object' ? next.rate : null,
             canSend: next.canSend !== undefined
                 ? Boolean(next.canSend)
-                : Boolean(next.allowed) && (!rate || rate.allowed)
+                : Boolean(next.allowed)
         };
-
-        if (rate && !rate.allowed) {
-            if (!rateCooldownArmedForStaleSnapshot) {
-                const retrySeconds = Math.max(1, Number(rate.retryAfterSeconds) || 1);
-                rateLimitUntil = Date.now() + (retrySeconds * 1000);
-                rateCooldownArmedForStaleSnapshot = true;
-                scheduleRateLimitCooldownRefresh();
-            }
-        } else {
-            rateCooldownArmedForStaleSnapshot = false;
-            if (Date.now() >= rateLimitUntil) {
-                rateLimitUntil = 0;
-            }
-        }
-
         updateUsageLimitUi();
     }
 
@@ -421,13 +428,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!authState.authenticated) {
             return false;
         }
-        if (!usageState.allowed) {
-            return false;
-        }
-        if (Date.now() < rateLimitUntil) {
-            return false;
-        }
-        return true;
+        return Boolean(usageState.allowed);
     }
 
     function updateUsageLimitUi() {
@@ -439,32 +440,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         const limit = usageState.limit || DAILY_MESSAGE_LIMIT;
         const remaining = usageState.remaining;
         const atDailyLimit = !usageState.allowed;
-        const rateLimitedNow = Date.now() < rateLimitUntil;
-        const waitSeconds = rateLimitedNow
-            ? Math.max(1, Math.ceil((rateLimitUntil - Date.now()) / 1000))
-            : 0;
-        const sendBlocked = atDailyLimit || rateLimitedNow;
 
         if (usageMeter) {
             if (atDailyLimit) {
                 usageMeter.textContent = `Trial: 0 of ${limit} messages left today`;
-            } else if (rateLimitedNow) {
-                usageMeter.textContent = `Slow down: wait ${waitSeconds}s before sending again`;
             } else {
                 usageMeter.textContent = `Trial: ${remaining} of ${limit} messages left today`;
             }
         }
 
+        const overWordLimit = !messageWithinWordLimit(textInput.value);
+        const sendBlocked = atDailyLimit || overWordLimit;
+
         textInput.disabled = atDailyLimit;
         sendButton.disabled = sendBlocked;
         sendButton.setAttribute('aria-disabled', sendBlocked ? 'true' : 'false');
+        updateMessageWordHint();
 
         if (atDailyLimit) {
             textInput.placeholder = 'Daily trial limit reached. Come back tomorrow!';
-        } else if (rateLimitedNow) {
-            textInput.placeholder = `Please wait ${waitSeconds}s before sending another message.`;
         } else {
-            textInput.placeholder = 'Ask me anything...';
+            textInput.placeholder = `Ask me anything (up to ${MAX_MESSAGE_WORDS} words)...`;
         }
     }
 
@@ -1519,13 +1515,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        if (!messageWithinWordLimit(message)) {
+            updateMessageWordHint();
+            updateUsageLimitUi();
+            return;
+        }
+
         if (!canSendUserMessage()) {
             updateUsageLimitUi();
             return;
         }
 
         textInput.value = '';
-        textInput.style.height = '50px';
+        resizeTextInput();
+        updateMessageWordHint();
         appendMessage('user', message);
 
         const abortController = new AbortController();
@@ -1571,33 +1574,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            if (response.status === 429 && data.rateLimited) {
-                rateCooldownArmedForStaleSnapshot = true;
-                if (data.rateLimit) {
-                    const retrySeconds = Math.max(1, Number(data.rateLimit.retryAfterSeconds) || 1);
-                    rateLimitUntil = Date.now() + (retrySeconds * 1000);
-                    scheduleRateLimitCooldownRefresh();
-                } else {
-                    rateLimitUntil = Date.now() + 2000;
-                    scheduleRateLimitCooldownRefresh();
-                }
-                if (data.usage) {
-                    applyUsageState(data.usage);
-                }
-                updateUsageLimitUi();
-                const rateMessage = (data.response || '').trim()
-                    || 'Meow, you are sending messages too fast! Please wait a moment and try again.';
-                appendMessage('ai', rateMessage);
-                saveChatHistory();
-                await speak(rateMessage);
-                return;
-            }
-
             if (response.status === 429 || data.limitReached) {
                 const limitMessage = (data.response || '').trim() || getTrialLimitMessage();
                 appendMessage('ai', limitMessage);
                 saveChatHistory();
                 await speak(limitMessage);
+                return;
+            }
+
+            if (response.status === 400 && data.messageTooLong) {
+                const longMessage = (data.response || '').trim() || getWordLimitMessage();
+                appendMessage('ai', longMessage);
+                saveChatHistory();
                 return;
             }
 
@@ -1706,9 +1694,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    textInput.addEventListener('paste', (event) => {
+        event.preventDefault();
+        const pasted = event.clipboardData?.getData('text') || '';
+        const start = textInput.selectionStart ?? textInput.value.length;
+        const end = textInput.selectionEnd ?? textInput.value.length;
+        const merged = `${textInput.value.slice(0, start)}${pasted}${textInput.value.slice(end)}`;
+        textInput.value = truncateToWordLimit(merged);
+        const nextCursor = Math.min(start + pasted.length, textInput.value.length);
+        textInput.setSelectionRange(nextCursor, nextCursor);
+        enforceMessageWordLimit();
+        updateUsageLimitUi();
+    });
+
     textInput.addEventListener('input', () => {
-        textInput.style.height = 'auto';
-        textInput.style.height = `${textInput.scrollHeight}px`;
+        enforceMessageWordLimit();
+        updateUsageLimitUi();
     });
 
     document.addEventListener('click', (event) => {
@@ -1901,6 +1902,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await refreshAuthState();
     }
     await refreshUsageStatus();
+    updateMessageWordHint();
     syncHistoryBackdrop();
 
     if (authState.authenticated) {
@@ -1911,5 +1913,4 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderMessages();
     }
 
-    refreshUsageStatus();
 });

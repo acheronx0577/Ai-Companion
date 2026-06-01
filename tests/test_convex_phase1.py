@@ -11,15 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED_LIMITS = {
     "dailyMessageLimit": 10,
-    "chatRateMaxRequests": 8,
-    "chatRateWindowSeconds": 60,
-    "chatRateMinIntervalSeconds": 2,
 }
 
 EXPECTED_TABLES = {"users", "dailyUsage", "chatSessions", "chatMessages"}
 
 
 class ConvexPhase1SchemaFileTests(unittest.TestCase):
+    """Static checks for Convex schema and constants alignment."""
+
     def test_schema_defines_all_tables(self):
         schema = (ROOT / "convex" / "schema.ts").read_text(encoding="utf-8")
         for table in EXPECTED_TABLES:
@@ -30,12 +29,6 @@ class ConvexPhase1SchemaFileTests(unittest.TestCase):
         usage = (ROOT / "usage_limit.py").read_text(encoding="utf-8")
         pairs = [
             ("DAILY_MESSAGE_LIMIT = 10", "DAILY_MESSAGE_LIMIT = 10"),
-            ("CHAT_RATE_MAX_REQUESTS = 8", "CHAT_RATE_MAX_REQUESTS = 8"),
-            ("CHAT_RATE_WINDOW_SECONDS = 60", "CHAT_RATE_WINDOW_SECONDS = 60"),
-            (
-                "CHAT_RATE_MIN_INTERVAL_SECONDS = 2",
-                "CHAT_RATE_MIN_INTERVAL_SECONDS = 2",
-            ),
         ]
         for in_constants, in_usage in pairs:
             self.assertIn(in_constants, constants)

@@ -1,4 +1,4 @@
-"""Phase 6 — call Convex HTTP usage increment from Flask `/chat`."""
+"""Call Convex HTTP usage increment from Flask `/chat`."""
 
 import json
 import os
