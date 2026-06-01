@@ -1,0 +1,19 @@
+[MAIN]
+# Use the workspace venv when pylint is run from the project root.
+init-hook = 'import sys; from pathlib import Path; sys.path.insert(0, str(Path.cwd()))'
+
+[MESSAGES CONTROL]
+# Intentional patterns in this Flask app (lazy optional imports, module singletons).
+disable =
+    import-outside-toplevel,
+    global-statement,
+    broad-exception-caught,
+    missing-function-docstring,
+    invalid-name,
+    line-too-long
+
+[FORMAT]
+max-line-length = 100
+
+[BASIC]
+good-names = runner,character_exists,cached_piper_voice

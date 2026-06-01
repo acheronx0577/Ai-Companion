@@ -1,10 +1,12 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
-from dotenv import load_dotenv
-import os
+"""WakuWaku AI Companion — Flask web app."""
 import io
+import os
 import wave
 from pathlib import Path
 from threading import Lock
+
+from dotenv import load_dotenv
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file
 
 from auth import auth_bp, init_auth, user_is_authenticated
 from chat_llm import chat_provider, chat_with_groq
@@ -401,7 +403,8 @@ def log_deploy_hints() -> None:
         )
     elif is_production_hosting():
         app.logger.info(
-            "Production hosting: add OAuth redirect URI in Google Cloud for your public HTTPS URL."
+            "Production hosting: add OAuth redirect URI in Google Cloud "
+            "for your public HTTPS URL."
         )
 
 
