@@ -43,6 +43,14 @@ npm install
 npm run test:a11y
 ```
 
+**Before each Convex phase commit:**
+
+```bash
+npm run phase:gate -- 0   # use 1, 2, … for later phases
+```
+
+See [docs/PHASE_GATE.md](docs/PHASE_GATE.md).
+
 ## Design
 
 See [DESIGN.md](DESIGN.md) for the Night Desk UI system.
@@ -50,3 +58,14 @@ See [DESIGN.md](DESIGN.md) for the Night Desk UI system.
 ## Architecture (Convex migration)
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the phased Convex backend plan (auth, database, usage limits).
+
+**Phase 0 (done locally):**
+
+```bash
+npm install
+npm run convex:dev:once
+npx convex run users:bootstrapPing
+npm run test:convex-phase0
+```
+
+Details: [convex/README.md](convex/README.md). Optional: `npx convex login` for a cloud deployment.

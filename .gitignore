@@ -27,8 +27,10 @@ credentials.json
 .idea/
 .cursor/
 
-# Convex generated (after Phase 0)
+# Convex (Phase 0+)
 convex/_generated/
+.convex/
+.env.local
 
 # Testing
 .pytest_cache/

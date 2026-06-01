@@ -325,7 +325,7 @@ gantt
 | Step | Status |
 |------|--------|
 | Plan | Done — see `.cursor/memory-bank/tasks.md` (local) or PR list below |
-| Build | Phase 0: `feat/convex-init` |
+| Build | Phase 0 done — branch `feat/convex-phase-0-init` |
 | Creative | Before Phase 5 — auth sidebar + usage meter |
 
 ### PR sequence (one PR per phase — merge before next)
@@ -344,7 +344,21 @@ Phase 5 UI decisions: dual Google control (`data-auth-backend`), Convex usage su
 
 ---
 
-## 9. Decisions needed
+## 9. Pre-commit phase gate (every phase)
+
+Before committing each phase PR, run **audit → verify → optimize → cleanup**:
+
+```bash
+npm run phase:gate -- 0   # replace 0 with current phase number
+```
+
+Full checklist: [docs/PHASE_GATE.md](docs/PHASE_GATE.md)  
+**UI phases (5, 7):** must pass `npm run test:a11y`.  
+**Rule:** Do not merge/commit until `phase:gate` exits 0.
+
+---
+
+## 10. Decisions needed
 
 1. **Convex Auth only** vs. keep Flask Google OAuth and sync users? → Recommend **Convex Auth only**.
 2. **Store chat history in Convex?** → Optional Phase 4b.

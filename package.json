@@ -2,14 +2,23 @@
   "name": "wakuwaku-companion",
   "private": true,
   "scripts": {
-    "lint": "ruff check . --exclude venv,.git,node_modules && ruff format --check .",
-    "lint:fix": "ruff check . --fix --exclude venv,.git,node_modules && ruff format .",
+    "lint": "node scripts/run_lint.mjs",
+    "lint:fix": "node scripts/run_lint.mjs --fix",
     "test:deploy": "python -m unittest tests.test_serve tests.test_deploy -v",
+    "test:convex-phase0": "node scripts/verify_convex_phase0.mjs",
+    "phase:gate": "node scripts/phase_gate.mjs",
     "test:a11y": "playwright test",
-    "test:a11y:report": "playwright show-report"
+    "test:a11y:report": "playwright show-report",
+    "convex:dev": "convex dev",
+    "convex:dev:once": "convex dev --once",
+    "convex:codegen": "convex codegen",
+    "convex:deploy": "convex deploy"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",
     "@playwright/test": "^1.51.1"
+  },
+  "dependencies": {
+    "convex": "^1.39.1"
   }
 }

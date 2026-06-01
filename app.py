@@ -1,4 +1,5 @@
 """WakuWaku AI Companion — Flask web app."""
+
 import io
 import os
 import wave

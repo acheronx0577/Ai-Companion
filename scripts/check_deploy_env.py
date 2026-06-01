@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check required env vars before cloud deploy. Run: python scripts/check_deploy_env.py"""
+
 import os
 import sys
 from pathlib import Path
@@ -49,10 +50,16 @@ def main() -> int:
 
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "").strip()
     if render_url:
-        print(f"\nProduction OAuth redirect URI:\n  {render_url.rstrip('/')}/auth/google/callback")
+        print(
+            f"\nProduction OAuth redirect URI:\n  {render_url.rstrip('/')}/auth/google/callback"
+        )
     else:
-        print("\nLocal OAuth redirect URI:\n  http://127.0.0.1:5000/auth/google/callback")
-        print("(After Render deploy, add https://YOUR-SERVICE.onrender.com/auth/google/callback)")
+        print(
+            "\nLocal OAuth redirect URI:\n  http://127.0.0.1:5000/auth/google/callback"
+        )
+        print(
+            "(After Render deploy, add https://YOUR-SERVICE.onrender.com/auth/google/callback)"
+        )
 
     return 0
 
