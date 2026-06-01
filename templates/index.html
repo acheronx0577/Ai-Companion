@@ -191,22 +191,10 @@
                 </div>
             </header>
 
-            <section id="message-list" class="message-list" aria-live="polite" aria-busy="false" aria-label="Chat messages"></section>
+            <div id="chat-conversation-panel" class="chat-conversation-panel">
+                <section id="message-list" class="message-list" aria-live="polite" aria-busy="false" aria-label="Chat messages"></section>
 
-            <footer class="chat-input-area" id="chat-input-area">
-                <div
-                    id="piper-warmup-overlay"
-                    class="piper-warmup-overlay"
-                    hidden
-                    role="status"
-                    aria-live="polite"
-                    aria-busy="false"
-                >
-                    <div class="piper-warmup-spinner" aria-hidden="true"></div>
-                    <p id="piper-warmup-message" class="piper-warmup-message">
-                        Loading voice engine… This may take a few seconds the first time.
-                    </p>
-                </div>
+                <footer class="chat-input-area" id="chat-input-area">
                 <label class="visually-hidden" for="text-input">Message to WakuWaku</label>
                 <textarea
                     id="text-input"
@@ -228,13 +216,35 @@
                 </p>
             </footer>
 
-            <div
-                id="voice-language-toast"
-                class="voice-language-toast"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                hidden></div>
+                <div
+                    id="piper-warmup-screen"
+                    class="piper-warmup-screen"
+                    hidden
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="piper-warmup-status-message"
+                    aria-busy="false"
+                >
+                    <div id="piper-warmup-card" class="piper-warmup-card">
+                        <p id="piper-warmup-percent" class="piper-warmup-percent" aria-hidden="true">0%</p>
+                        <div id="piper-warmup-spinner" class="piper-warmup-spinner" aria-hidden="true"></div>
+                        <p id="piper-warmup-status-message" class="piper-warmup-status-message">
+                            Loading English voice engine…
+                        </p>
+                        <div class="piper-warmup-progress-track" aria-hidden="true">
+                            <div id="piper-warmup-progress-bar" class="piper-warmup-progress-bar"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    id="voice-language-toast"
+                    class="voice-language-toast"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    hidden></div>
+            </div>
 
             <aside class="companion-panel" aria-label="Companion character">
                 <p class="label companion-panel-label">WakuWaku</p>

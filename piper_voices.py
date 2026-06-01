@@ -181,10 +181,13 @@ def _evict_loaded_voices(keep_id: str) -> None:
 
 
 def warmup_piper_voice(voice_id: str | None = None) -> bool:
-    """Load the ONNX model into memory without synthesizing audio (fast warm-up)."""
+    """Load ONNX and run a short synthesis so the first real reply is not cold."""
     if piper_disabled():
         return False
-    return get_piper_voice(voice_id) is not None
+    voice = get_piper_voice(voice_id)
+    if voice is None:
+        return False
+    return synthesize_text_to_wav(voice, "Hi") is not None
 
 
 def get_piper_voice(voice_id: str | None = None):
