@@ -1,6 +1,8 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c5';
-    const DEVICE_VOICE_LANGS_ALWAYS = new Set(['en', 'ja']);
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c8';
+    const PIPER_WARMUP_LOADING_MESSAGE =
+        'Loading voice engine… This may take a few seconds the first time.';
+    const DEVICE_VOICE_LANGS_ALWAYS = new Set(['ja']);
     const GUEST_USAGE_METER_TEXT = 'Sign in for daily trial messages.';
     const MAX_MESSAGE_WORDS = 100;
     const SUPPORTED_CHAT_LANGUAGES = new Set(['en', 'ja']);
@@ -18,8 +20,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     let convexUnsubscribe = null;
     let lastSyncedUserId = null;
     const appShell = document.querySelector('.app-shell');
+    const chatInputArea = document.getElementById('chat-input-area');
     const textInput = document.getElementById('text-input');
     const messageWordHint = document.getElementById('message-word-hint');
+    const piperWarmupOverlay = document.getElementById('piper-warmup-overlay');
+    const piperWarmupMessage = document.getElementById('piper-warmup-message');
     const sendButton = document.getElementById('send-button');
     const stopButton = document.getElementById('stop-button');
     const sendButtonWrap = document.querySelector('.send-button-wrap');
@@ -137,6 +142,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let browserVoiceMenu = [];
     let piperStatusCache = null;
     let piperStatusFetchedAt = 0;
+    /** @type {'idle' | 'loading' | 'ready' | 'skipped' | 'failed'} */
+    let piperWarmupState = 'idle';
+    let piperWarmupRunPromise = null;
     const PIPER_STATUS_TTL_MS = 60_000;
     let lipSyncInterval;
     let activeTtsAudio = null;
@@ -621,6 +629,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (!loggedIn) {
+            piperWarmupState = 'idle';
+            piperWarmupRunPromise = null;
+            setPiperWarmupOverlay(false);
             textInput.disabled = true;
             sendButton.disabled = true;
             sendButton.setAttribute('aria-disabled', 'true');
@@ -631,7 +642,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+        if (loggedIn && voiceListInitialized) {
+            void runPiperStartupWarmup();
+        }
         updateUsageLimitUi();
+    }
+
+    function isPiperWarmupBlocking() {
+        return piperWarmupState === 'loading';
+    }
+
+    function setPiperWarmupOverlay(active, message) {
+        if (!piperWarmupOverlay) {
+            return;
+        }
+        if (message && piperWarmupMessage) {
+            piperWarmupMessage.textContent = message;
+        }
+        piperWarmupOverlay.hidden = !active;
+        piperWarmupOverlay.setAttribute('aria-busy', active ? 'true' : 'false');
+        chatInputArea?.classList.toggle('is-piper-warming', active);
     }
 
     function ensureChatReadyAfterLogin() {
@@ -656,6 +686,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function canSendUserMessage() {
         if (!authState.authenticated) {
+            return false;
+        }
+        if (isPiperWarmupBlocking()) {
             return false;
         }
         return !isAtDailyMessageLimit(usageState);
@@ -683,15 +716,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const overWordLimit = !messageWithinWordLimit(textInput.value);
-        const sendBlocked = atDailyLimit || overWordLimit;
+        const warmupBlocking = isPiperWarmupBlocking();
+        const sendBlocked = atDailyLimit || overWordLimit || warmupBlocking;
 
-        textInput.disabled = atDailyLimit;
-        textInput.setAttribute('aria-disabled', atDailyLimit ? 'true' : 'false');
+        textInput.disabled = atDailyLimit || warmupBlocking;
+        textInput.setAttribute('aria-disabled', textInput.disabled ? 'true' : 'false');
         sendButton.disabled = sendBlocked;
         sendButton.setAttribute('aria-disabled', sendBlocked ? 'true' : 'false');
         updateMessageWordHint();
 
-        if (atDailyLimit) {
+        if (warmupBlocking) {
+            textInput.placeholder = 'Voice engine loading…';
+        } else if (atDailyLimit) {
             textInput.placeholder = 'Daily trial limit reached — come back tomorrow';
         } else {
             updateInputPlaceholderForLanguage(getSelectedSpeechLanguage());
@@ -2266,11 +2302,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         syncChatLanguageUi(getSelectedSpeechLanguage(), { notify: false });
         syncVoiceSelectUi({ forceRebuild: true });
 
-        const warmedPiperId = getSelectedPiperVoiceId();
-        if (warmedPiperId) {
-            warmupPiperVoice(warmedPiperId);
-        }
         voiceListInitialized = true;
+        void runPiperStartupWarmup(piperReadyVoices);
     }
 
     function startLipSync() {
@@ -2509,18 +2542,76 @@ document.addEventListener('DOMContentLoaded', async () => {
         return ttsResponse.blob();
     }
 
-    let piperWarmupVoiceId = null;
+    const piperWarmupByVoice = new Map();
+
     function warmupPiperVoice(voiceId) {
-        if (!voiceId || piperWarmupVoiceId === voiceId) {
+        if (!voiceId) {
+            return Promise.resolve(false);
+        }
+        const existing = piperWarmupByVoice.get(voiceId);
+        if (existing) {
+            return existing;
+        }
+        const promise = fetch('/voices/warmup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ voice: voiceId })
+        })
+            .then((response) => response.ok)
+            .catch(() => false)
+            .finally(() => {
+                piperWarmupByVoice.delete(voiceId);
+            });
+        piperWarmupByVoice.set(voiceId, promise);
+        return promise;
+    }
+
+    async function ensurePiperModelReady(voiceId) {
+        const id = voiceId || getSelectedPiperVoiceId();
+        if (!id || !shouldUsePiperTts()) {
+            return false;
+        }
+        return warmupPiperVoice(id);
+    }
+
+    async function runPiperStartupWarmup(piperReadyVoices) {
+        if (!authState.authenticated) {
             return;
         }
-        piperWarmupVoiceId = voiceId;
-        // Piper/espeak does not synthesize "." (empty audio); use a short real word.
-        void fetchPiperAudioBlob('Hi', voiceId).catch(() => {
-            if (piperWarmupVoiceId === voiceId) {
-                piperWarmupVoiceId = null;
-            }
-        });
+        if (piperWarmupState === 'ready' || piperWarmupState === 'skipped') {
+            return;
+        }
+        if (piperWarmupRunPromise) {
+            return piperWarmupRunPromise;
+        }
+
+        const ready = (piperReadyVoices || piperCatalogVoices).filter((entry) => entry.available);
+        if (!ready.length) {
+            piperWarmupState = 'skipped';
+            setPiperWarmupOverlay(false);
+            updateUsageLimitUi();
+            return;
+        }
+
+        const englishVoice = ready.find((entry) => entry.lang === 'en');
+        const voiceId = englishVoice?.id || ready[0].id;
+
+        piperWarmupRunPromise = (async () => {
+            piperWarmupState = 'loading';
+            setPiperWarmupOverlay(true, PIPER_WARMUP_LOADING_MESSAGE);
+            updateUsageLimitUi();
+
+            const ok = await warmupPiperVoice(voiceId);
+            piperWarmupState = ok ? 'ready' : 'failed';
+            setPiperWarmupOverlay(false);
+            updateUsageLimitUi();
+        })();
+
+        try {
+            await piperWarmupRunPromise;
+        } finally {
+            piperWarmupRunPromise = null;
+        }
     }
 
     function playAudioBlob(audioBlob, speechId) {
@@ -2627,6 +2718,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 selectFirstPiperVoiceForLanguage(getSelectedSpeechLanguage());
             }
 
+            const piperVoiceId = getSelectedPiperVoiceId()
+                || findAvailablePiperVoiceForLanguage(getSelectedSpeechLanguage())?.id;
+            if (piperVoiceId) {
+                await ensurePiperModelReady(piperVoiceId);
+            }
+
             try {
                 const spokeAll = await speakWithPiperVoice(normalized, speechId, {
                     firstChunkPromise: firstPiperChunkPromise,
@@ -2658,6 +2755,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!messageWithinWordLimit(message)) {
             updateMessageWordHint();
             updateUsageLimitUi();
+            return;
+        }
+
+        if (isPiperWarmupBlocking()) {
             return;
         }
 

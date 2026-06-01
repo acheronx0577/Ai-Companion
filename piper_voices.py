@@ -26,8 +26,8 @@ PIPER_VOICE_CATALOG: tuple[dict[str, str], ...] = (
     },
 )
 
-# Device voices always listed alongside Piper (e.g. Windows English + Piper English).
-DEVICE_LANGS_ALWAYS: frozenset[str] = frozenset({"en", "ja"})
+# Device voices kept even when Piper covers that language (Japanese has no Piper voice).
+DEVICE_LANGS_ALWAYS: frozenset[str] = frozenset({"ja"})
 
 BROWSER_VOICE_MENU: tuple[dict[str, str], ...] = (
     {
@@ -130,7 +130,7 @@ def list_piper_voice_menu() -> list[dict[str, str | bool]]:
 
 
 def list_browser_voice_menu(*, hide_piper_languages: bool = True) -> list[dict[str, str]]:
-    """Device-voice pins; keep English/Japanese even when Piper covers English."""
+    """Pinned device voices; hide English when Piper English is installed."""
     menu = [dict(entry) for entry in BROWSER_VOICE_MENU]
     if hide_piper_languages and not piper_disabled():
         availability = voice_availability()
@@ -178,6 +178,13 @@ def _evict_loaded_voices(keep_id: str) -> None:
                 break
         if not evicted:
             break
+
+
+def warmup_piper_voice(voice_id: str | None = None) -> bool:
+    """Load the ONNX model into memory without synthesizing audio (fast warm-up)."""
+    if piper_disabled():
+        return False
+    return get_piper_voice(voice_id) is not None
 
 
 def get_piper_voice(voice_id: str | None = None):

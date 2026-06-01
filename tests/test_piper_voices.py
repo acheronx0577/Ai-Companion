@@ -32,14 +32,14 @@ class PiperVoiceCatalogTests(unittest.TestCase):
     def test_browser_menu_english_and_japanese(self):
         langs = {entry["lang"] for entry in BROWSER_VOICE_MENU}
         self.assertEqual(langs, {"en", "ja"})
-        self.assertEqual(DEVICE_LANGS_ALWAYS, frozenset({"en", "ja"}))
+        self.assertEqual(DEVICE_LANGS_ALWAYS, frozenset({"ja"}))
 
-    def test_browser_menu_keeps_english_when_piper_installed(self):
+    def test_browser_menu_hides_english_when_piper_installed(self):
         if not voice_files_present("en_US-hfc_female-medium"):
             self.skipTest("English Piper model not installed")
         menu = list_browser_voice_menu()
         langs = {entry["lang"] for entry in menu}
-        self.assertIn("en", langs)
+        self.assertNotIn("en", langs)
         self.assertIn("ja", langs)
 
     def test_menu_lists_full_catalog(self):
@@ -91,7 +91,9 @@ class PiperVoicesStatusRouteTests(unittest.TestCase):
         self.assertEqual(len(data["piperVoices"]), 1)
         self.assertEqual(data["piperVoices"][0]["id"], "en_US-hfc_female-medium")
         device_langs = {entry.get("lang") for entry in data["browserVoiceMenu"]}
-        self.assertEqual(device_langs, {"en", "ja"})
+        self.assertIn("ja", device_langs)
+        if data.get("piperAvailable"):
+            self.assertNotIn("en", device_langs)
 
 
 if __name__ == "__main__":

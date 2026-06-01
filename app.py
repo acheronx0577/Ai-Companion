@@ -35,6 +35,8 @@ from piper_voices import (
     piper_disabled,
     synthesize_text_to_wav,
     voice_files_present,
+    resolve_piper_voice_id,
+    warmup_piper_voice,
 )
 
 # Piper models live in voices/ next to this file — keep cwd stable for Convex/npm dev.
@@ -308,6 +310,18 @@ def voices_status():
     return response
 
 
+@app.route("/voices/warmup", methods=["POST"])
+def voices_warmup():
+    """Load Piper ONNX into RAM (no audio). Call from the browser to cut first-reply delay."""
+    if piper_disabled():
+        return jsonify({"ok": False, "error": "Piper disabled"}), 503
+    payload = request.get_json(silent=True) or {}
+    voice_id = (payload.get("voice") or "").strip() or None
+    if not warmup_piper_voice(voice_id):
+        return jsonify({"ok": False, "error": "Piper voice unavailable"}), 503
+    return jsonify({"ok": True, "voiceId": resolve_piper_voice_id(voice_id)})
+
+
 def _parse_chat_payload(payload: dict) -> tuple[str, str, str]:
     user_message = (payload.get("message") or "").strip()
     session_id = payload.get("session_id", "default_session")
@@ -575,6 +589,24 @@ def log_deploy_hints() -> None:
 
 
 log_deploy_hints()
+
+
+def _preload_piper_async() -> None:
+    if piper_disabled():
+        return
+    import threading
+
+    def _run() -> None:
+        try:
+            if warmup_piper_voice():
+                app.logger.info("Piper English model preloaded")
+        except Exception:
+            app.logger.exception("Piper background preload failed")
+
+    threading.Thread(target=_run, name="piper-preload", daemon=True).start()
+
+
+_preload_piper_async()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Check /voices/status: English Piper + en/ja device voices only. */
+/** Check /voices/status: English Piper + Japanese device voice (no English device when Piper on). */
 const base = process.env.WAKU_BASE_URL || "http://127.0.0.1:5000";
 const url = `${base.replace(/\/$/, "")}/voices/status`;
 
@@ -44,8 +44,11 @@ async function main() {
   }
 
   const deviceLangs = new Set(device.map((v) => v.lang));
-  if (!deviceLangs.has("en") || !deviceLangs.has("ja")) {
-    fail(`Expected en + ja device voices, got: ${[...deviceLangs].join(", ")}`);
+  if (!deviceLangs.has("ja")) {
+    fail(`Expected Japanese device voice, got: ${[...deviceLangs].join(", ")}`);
+  }
+  if (data.piperAvailable && deviceLangs.has("en")) {
+    fail("English device voice should be hidden when Piper English is available");
   }
 
   console.log("\nPiper voices:");

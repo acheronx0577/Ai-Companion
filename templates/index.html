@@ -193,7 +193,20 @@
 
             <section id="message-list" class="message-list" aria-live="polite" aria-busy="false" aria-label="Chat messages"></section>
 
-            <footer class="chat-input-area">
+            <footer class="chat-input-area" id="chat-input-area">
+                <div
+                    id="piper-warmup-overlay"
+                    class="piper-warmup-overlay"
+                    hidden
+                    role="status"
+                    aria-live="polite"
+                    aria-busy="false"
+                >
+                    <div class="piper-warmup-spinner" aria-hidden="true"></div>
+                    <p id="piper-warmup-message" class="piper-warmup-message">
+                        Loading voice engine… This may take a few seconds the first time.
+                    </p>
+                </div>
                 <label class="visually-hidden" for="text-input">Message to WakuWaku</label>
                 <textarea
                     id="text-input"
