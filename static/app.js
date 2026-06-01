@@ -1,9 +1,9 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260602c';
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260602j';
     const wakuEnv = window.__WAKU_ENV__ || {};
     const useConvexFrontend = Boolean(wakuEnv.convexEnabled && wakuEnv.convexUrl);
     let convexUnsubscribe = null;
-    let lastConvexAuthenticated = false;
+    let lastSyncedUserId = null;
     const appShell = document.querySelector('.app-shell');
     const textInput = document.getElementById('text-input');
     const sendButton = document.getElementById('send-button');
@@ -80,6 +80,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let rateLimitUntil = 0;
     let rateLimitCooldownTimer = null;
     let rateLimitUiTimer = null;
+    let chatHistoryHydrated = false;
+    let rateCooldownArmedForStaleSnapshot = false;
 
     function formatConversationMeta(createdAt) {
         const date = new Date(createdAt);
@@ -163,11 +165,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         if (rate && !rate.allowed) {
-            const retrySeconds = Math.max(1, Number(rate.retryAfterSeconds) || 1);
-            rateLimitUntil = Date.now() + (retrySeconds * 1000);
-            scheduleRateLimitCooldownRefresh();
-        } else if (usageState.canSend) {
-            rateLimitUntil = 0;
+            if (!rateCooldownArmedForStaleSnapshot) {
+                const retrySeconds = Math.max(1, Number(rate.retryAfterSeconds) || 1);
+                rateLimitUntil = Date.now() + (retrySeconds * 1000);
+                rateCooldownArmedForStaleSnapshot = true;
+                scheduleRateLimitCooldownRefresh();
+            }
+        } else {
+            rateCooldownArmedForStaleSnapshot = false;
+            if (Date.now() >= rateLimitUntil) {
+                rateLimitUntil = 0;
+            }
         }
 
         updateUsageLimitUi();
@@ -190,10 +198,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             applyUsageState(snap.usage);
         }
         renderAuthUi();
-        if (snap.authenticated && !lastConvexAuthenticated) {
-            void window.WakuConvex.syncFlaskSession().catch(() => {});
+        if (snap.authenticated && snap.user) {
+            if (snap.user.id !== lastSyncedUserId) {
+                const syncId = snap.user.id;
+                lastSyncedUserId = syncId;
+                void window.WakuConvex.syncFlaskSession().catch(() => {
+                    if (lastSyncedUserId === syncId) {
+                        lastSyncedUserId = null;
+                    }
+                });
+            }
+        } else if (!snap.authenticated) {
+            lastSyncedUserId = null;
         }
-        lastConvexAuthenticated = Boolean(snap.authenticated);
     }
 
     function waitForConvexReady() {
@@ -267,7 +284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function renderAuthUi() {
-        const loggedIn = Boolean(authState.authenticated && authState.user);
+        const loggedIn = Boolean(authState.authenticated);
 
         if (authGuest) {
             authGuest.hidden = loggedIn;
@@ -289,20 +306,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (loggedIn) {
             const user = authState.user;
-            if (userDisplayName) {
-                userDisplayName.textContent = user.name || 'Google user';
-            }
-            if (userDisplayEmail) {
-                userDisplayEmail.textContent = user.email || '';
-            }
-            if (user.picture) {
-                defaultUserAvatar = user.picture;
+            if (user) {
+                if (userDisplayName) {
+                    userDisplayName.textContent = user.name || 'Google user';
+                }
+                if (userDisplayEmail) {
+                    userDisplayEmail.textContent = user.email || '';
+                }
+                if (user.picture) {
+                    defaultUserAvatar = user.picture;
+                } else {
+                    defaultUserAvatar = builtInUserAvatar;
+                }
+                if (profilePreview) {
+                    profilePreview.hidden = false;
+                    profilePreview.src = defaultUserAvatar;
+                }
             } else {
-                defaultUserAvatar = builtInUserAvatar;
-            }
-            if (profilePreview) {
-                profilePreview.hidden = false;
-                profilePreview.src = defaultUserAvatar;
+                if (userDisplayName) {
+                    userDisplayName.textContent = 'Restoring...';
+                }
+                if (userDisplayEmail) {
+                    userDisplayEmail.textContent = 'Restoring profile...';
+                }
+                if (profilePreview) {
+                    profilePreview.hidden = false;
+                    profilePreview.src = builtInUserAvatar;
+                }
             }
         } else if (profilePreview) {
             profilePreview.hidden = true;
@@ -368,6 +398,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function ensureChatReadyAfterLogin() {
+        if (!chatHistoryHydrated) {
+            return;
+        }
         if (!authState.authenticated) {
             return;
         }
@@ -394,7 +427,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (Date.now() < rateLimitUntil) {
             return false;
         }
-        return usageState.canSend !== false;
+        return true;
     }
 
     function updateUsageLimitUi() {
@@ -410,7 +443,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const waitSeconds = rateLimitedNow
             ? Math.max(1, Math.ceil((rateLimitUntil - Date.now()) / 1000))
             : 0;
-        const sendBlocked = atDailyLimit || rateLimitedNow || !usageState.canSend;
+        const sendBlocked = atDailyLimit || rateLimitedNow;
 
         if (usageMeter) {
             if (atDailyLimit) {
@@ -576,6 +609,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function saveChatHistory() {
+        if (!chatHistoryHydrated) {
+            return;
+        }
         try {
             const payload = {
                 version: 1,
@@ -1470,6 +1506,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } finally {
             if (speechId === activeSpeechId) {
                 speechInProgress = false;
+                stopLipSync();
                 updateAssistantControls();
             }
         }
@@ -1535,15 +1572,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             if (response.status === 429 && data.rateLimited) {
-                if (data.usage) {
-                    applyUsageState(data.usage);
-                }
+                rateCooldownArmedForStaleSnapshot = true;
                 if (data.rateLimit) {
                     const retrySeconds = Math.max(1, Number(data.rateLimit.retryAfterSeconds) || 1);
                     rateLimitUntil = Date.now() + (retrySeconds * 1000);
                     scheduleRateLimitCooldownRefresh();
-                    updateUsageLimitUi();
+                } else {
+                    rateLimitUntil = Date.now() + 2000;
+                    scheduleRateLimitCooldownRefresh();
                 }
+                if (data.usage) {
+                    applyUsageState(data.usage);
+                }
+                updateUsageLimitUi();
                 const rateMessage = (data.response || '').trim()
                     || 'Meow, you are sending messages too fast! Please wait a moment and try again.';
                 appendMessage('ai', rateMessage);
@@ -1588,6 +1629,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function createConversationAndActivate() {
+        if (!chatHistoryHydrated) {
+            return;
+        }
         if (!authState.authenticated) {
             updateChatAccessForAuth();
             return;
@@ -1832,6 +1876,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         setSidebarCollapsed(window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH);
     }
 
+    window.addEventListener('pageshow', () => {
+        void refreshAuthState();
+    });
+
+    // Hydrate chat history synchronously at start to prevent premature empty saves
+    const hasHistory = loadChatHistory();
+    chatHistoryHydrated = true;
+    if (hasHistory) {
+        renderConversationList();
+        renderMessages();
+    } else {
+        activeConversationId = null;
+        renderConversationList();
+        renderMessages();
+    }
+
     await waitForConvexReady();
     bindConvexSubscriber();
     if (convexIsReady()) {
@@ -1843,24 +1903,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refreshUsageStatus();
     syncHistoryBackdrop();
 
-    if (!loadChatHistory()) {
-        if (authState.authenticated) {
-            createConversationAndActivate();
-        } else {
-            activeConversationId = null;
-            renderConversationList();
-            renderMessages();
-        }
-    } else {
+    if (authState.authenticated) {
+        ensureChatReadyAfterLogin();
+    } else if (activeConversationId && !getActiveConversation()) {
+        activeConversationId = null;
         renderConversationList();
         renderMessages();
-        if (authState.authenticated) {
-            ensureChatReadyAfterLogin();
-        } else if (activeConversationId && !getActiveConversation()) {
-            activeConversationId = null;
-            renderConversationList();
-            renderMessages();
-        }
     }
 
     refreshUsageStatus();

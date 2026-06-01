@@ -23,7 +23,7 @@ function parseEnv(text) {
 }
 
 function convexEnvSet(name, value) {
-  const args = ["convex", "env", "set", name, value];
+  const args = ["convex", "env", "set", name, "--", value];
   if (process.platform === "win32") {
     execSync(`npx ${args.map((a) => JSON.stringify(a)).join(" ")}`, {
       cwd: root,

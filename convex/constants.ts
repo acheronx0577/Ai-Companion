@@ -3,6 +3,6 @@
  */
 export const DAILY_MESSAGE_LIMIT = 10;
 
-export const CHAT_RATE_MAX_REQUESTS = 8;
+export const CHAT_RATE_MAX_REQUESTS = 999999;
 export const CHAT_RATE_WINDOW_SECONDS = 60;
-export const CHAT_RATE_MIN_INTERVAL_SECONDS = 2;
+export const CHAT_RATE_MIN_INTERVAL_SECONDS = 0;

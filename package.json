@@ -19,7 +19,8 @@
     "convex:dev": "convex dev",
     "convex:dev:once": "convex dev --once",
     "convex:codegen": "convex codegen",
-    "convex:deploy": "convex deploy"
+    "convex:deploy": "convex deploy",
+    "convex:set-jwt-keys": "node scripts/set_convex_jwt_keys.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",

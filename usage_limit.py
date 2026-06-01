@@ -11,9 +11,9 @@ from threading import Lock
 from flask import request, session
 
 DAILY_MESSAGE_LIMIT = 10
-CHAT_RATE_MAX_REQUESTS = 8
+CHAT_RATE_MAX_REQUESTS = 999999
 CHAT_RATE_WINDOW_SECONDS = 60
-CHAT_RATE_MIN_INTERVAL_SECONDS = 2
+CHAT_RATE_MIN_INTERVAL_SECONDS = 0
 USAGE_STORE_PATH = Path("data/daily_usage.json")
 usage_lock = Lock()
 
@@ -106,13 +106,13 @@ def rate_limit_status_for_current_request() -> dict:
                 allowed = False
                 retry_after_seconds = max(
                     1,
-                    int(round(CHAT_RATE_MIN_INTERVAL_SECONDS - since_last)),
+                    round(CHAT_RATE_MIN_INTERVAL_SECONDS - since_last),
                 )
 
         if len(timestamps) >= CHAT_RATE_MAX_REQUESTS:
             allowed = False
             window_retry = max(
-                1, int(round(CHAT_RATE_WINDOW_SECONDS - (now - timestamps[0])))
+                1, round(CHAT_RATE_WINDOW_SECONDS - (now - timestamps[0]))
             )
             retry_after_seconds = max(retry_after_seconds, window_retry)
 

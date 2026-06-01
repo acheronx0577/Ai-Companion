@@ -28,6 +28,14 @@ Generate JWT keys (run once, paste both lines into Convex env):
 node scripts/generate_auth_keys.mjs
 ```
 
+Alternatively, you can automatically generate and set both JWT keys in Convex using the command below (recommended on Windows to avoid CLI argument flag issues):
+
+```bash
+npm run convex:set-jwt-keys
+```
+
+Always restart `npx convex dev` after setting or changing any Convex environment variables.
+
 Optional: sync Google vars from `.env`:
 
 ```bash
