@@ -99,8 +99,10 @@ After saving variables, Railway redeploys. Open your public URL and:
 Start command:
 
 ```bash
-gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+python -u railway_serve.py
 ```
+
+(`railway_serve.py` reads numeric `PORT` from the environment — do **not** use `$PORT` or `${PORT}` in a custom start command.)
 
 ## Cost / sizing
 

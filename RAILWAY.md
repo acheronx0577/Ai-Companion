@@ -85,11 +85,27 @@ git push origin main
 
 **Fix in repo:** `nixpacks.toml` now uses `/opt/venv/bin/pip` only; **or** `railway.json` uses **DOCKERFILE** builder (recommended on Metal V3).
 
-### Deploy failed: `'$PORT' is not a valid port number`
+### Deploy failed: `'$PORT'` or `'${PORT'` is not a valid port number
 
-**Cause:** `startCommand` or Dockerfile `CMD` passed literal `$PORT` without a shell.
+**Cause (most common):** Railway **Deploy → Start Command** still has something like:
 
-**Fix:** Use `scripts/start.sh` (LF line endings only). Remove custom `startCommand` in Railway dashboard.
+```text
+gunicorn app:app --bind 0.0.0.0:$PORT ...
+```
+
+or `${PORT}` — gunicorn gets the **literal text** `$PORT` / `${PORT`, not a number.
+
+**Cause (less common):** Variable `PORT` in Railway is set to the string `${PORT}` instead of a number. `railway_serve.py` now ignores invalid values and uses `8080`.
+
+**Fix:**
+
+1. Railway → **Settings → Deploy → Start Command** → set exactly:
+   ```text
+   python -u railway_serve.py
+   ```
+   Or leave **empty** and use Dockerfile `CMD` from git.
+2. **Delete** any custom `PORT` variable you added manually (Railway injects `PORT` automatically).
+3. Push latest code and redeploy.
 
 **Fix:** If healthcheck fails but build OK — often **CRLF** in `start.sh` from Windows (`/bin/sh\r: bad interpreter`). Repo uses `.gitattributes` + `sed` in Dockerfile.
 
