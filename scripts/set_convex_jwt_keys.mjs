@@ -7,10 +7,17 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+const useProd = process.argv.includes("--prod");
+
 function convexEnvSet(name, value) {
   // Use '--' to prevent CLI flags confusion (especially with '-----BEGIN' on Windows)
-  const args = ["convex", "env", "set", name, "--", value];
-  console.log(`Setting ${name} in Convex environment...`);
+  const args = ["convex", "env", "set", name];
+  if (useProd) {
+    args.push("--prod");
+  }
+  args.push("--", value);
+  const target = useProd ? "production" : "development";
+  console.log(`Setting ${name} on Convex ${target}...`);
   if (process.platform === "win32") {
     execSync(`npx ${args.map((a) => JSON.stringify(a)).join(" ")}`, {
       cwd: root,

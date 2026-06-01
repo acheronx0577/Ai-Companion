@@ -67,6 +67,14 @@ https://YOUR-APP.onrender.com/auth/google/callback
 
 ## 3. Test sign-in + profile sync (Phase 3)
 
+**One terminal (recommended):**
+
+```bash
+npm run dev
+```
+
+**Or two terminals:**
+
 ```bash
 npm run convex:dev
 python app.py

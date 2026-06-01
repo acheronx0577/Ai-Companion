@@ -16,11 +16,14 @@
     "design:gate": "node scripts/phase_gate.mjs",
     "test:a11y": "playwright test",
     "test:a11y:report": "playwright show-report",
+    "dev": "convex dev --tail-logs expose --start \"python app.py\"",
     "convex:dev": "convex dev",
     "convex:dev:once": "convex dev --once",
     "convex:codegen": "convex codegen",
     "convex:deploy": "convex deploy",
-    "convex:set-jwt-keys": "node scripts/set_convex_jwt_keys.mjs"
+    "convex:set-jwt-keys": "node scripts/set_convex_jwt_keys.mjs",
+    "convex:set-jwt-keys:prod": "node scripts/set_convex_jwt_keys.mjs --prod",
+    "convex:sync-prod": "node scripts/sync_convex_production.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",

@@ -216,8 +216,12 @@ def favicon():
 @app.route("/health")
 def health():
     """Lightweight health check for hosting (no auth, no AI call)."""
+    load_dotenv(".env.local")
     piper_disabled = os.environ.get("DISABLE_PIPER", "").lower() in ("1", "true", "yes")
     piper_files = piper_model_path.exists() and piper_config_path.exists()
+    convex_url = os.environ.get("CONVEX_URL", "").strip()
+    convex_site = os.environ.get("CONVEX_SITE_URL", "").strip().rstrip("/")
+    render_url = (os.environ.get("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")
     return jsonify(
         {
             "status": "ok",
@@ -225,6 +229,18 @@ def health():
             "googleOAuthConfigured": bool(
                 os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
                 and os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
+            ),
+            "convex": {
+                "urlConfigured": bool(convex_url),
+                "siteUrlConfigured": bool(convex_site),
+                "frontendEnabled": convex_frontend_enabled(),
+                "usageViaConvex": convex_usage.use_convex_usage(),
+                "expectedGoogleCallback": (
+                    f"{convex_site}/api/auth/callback/google" if convex_site else None
+                ),
+            },
+            "flaskGoogleCallback": (
+                f"{render_url}/auth/google/callback" if render_url else None
             ),
             "piper": {
                 "disabled": piper_disabled,

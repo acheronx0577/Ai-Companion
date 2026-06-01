@@ -51,28 +51,74 @@ In the service → **Environment**:
 | `GOOGLE_OAUTH_CLIENT_ID` | Yes |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Yes |
 | `DISABLE_PIPER` | `1` (recommended on Free tier) |
+| `CONVEX_URL` | Yes (Phase 5+) — **production** URL from [Convex dashboard](https://dashboard.convex.dev) → Settings → Production |
+| `CONVEX_SITE_URL` | Yes — same project, `https://….convex.site` (not `.cloud`) |
+| `PRODUCTION` | `1` (recommended — secure cookies behind HTTPS) |
 
 Do **not** set `PORT` — Render sets it automatically.
 
-Optional: `PRODUCTION=1` (enables secure cookies behind HTTPS proxy).
+Do **not** point `CONVEX_URL` at `http://127.0.0.1:3210` — that is local dev only.
 
 ---
 
-## 4. Google OAuth redirect URI
+## 4. Google OAuth + Convex Auth (production)
 
-After first deploy, copy your URL, e.g. `https://wakuwaku-companion.onrender.com`.
+The main app sign-in button uses **Convex Auth**, not Flask `/auth/google`, when `CONVEX_URL` is set.
 
-In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth client → **Authorized redirect URIs**:
+You must configure **three places** (local-only setup is not enough):
+
+### A. Render environment
+
+Set `CONVEX_URL` and `CONVEX_SITE_URL` from your **deployed** Convex project (Production deployment in the dashboard).
+
+### B. Convex **production** environment variables
+
+In [Convex dashboard](https://dashboard.convex.dev) → your project → **Production** → Environment Variables:
+
+| Variable | Example for this app |
+|----------|----------------------|
+| `SITE_URL` | `https://ai-companion-ngbi.onrender.com` |
+| `AUTH_GOOGLE_ID` | Same as `GOOGLE_OAUTH_CLIENT_ID` |
+| `AUTH_GOOGLE_SECRET` | Same as `GOOGLE_OAUTH_CLIENT_SECRET` |
+| `JWT_PRIVATE_KEY` | From `npm run convex:set-jwt-keys -- --prod` |
+| `JWKS` | Set together with JWT script |
+
+From your machine (after `npx convex deploy`):
+
+```bash
+node scripts/sync_convex_production.mjs https://ai-companion-ngbi.onrender.com
+npm run convex:set-jwt-keys -- --prod
+```
+
+`SITE_URL` must be your **public Render URL**, not `http://127.0.0.1:5000`. If it stays on localhost, Google sign-in on Render will fail or redirect wrong.
+
+### C. Google Cloud — **Authorized redirect URIs**
+
+In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → OAuth client, add **both**:
 
 ```text
-https://YOUR-SERVICE.onrender.com/auth/google/callback
+https://ai-companion-ngbi.onrender.com/auth/google/callback
+https://YOUR-PROJECT-NAME.convex.site/api/auth/callback/google
 ```
+
+Replace `YOUR-PROJECT-NAME` with the hostname from Convex dashboard `CONVEX_SITE_URL` (e.g. `happy-animal-123.convex.site`).
 
 Keep for local dev:
 
 ```text
 http://127.0.0.1:5000/auth/google/callback
+http://127.0.0.1:3211/api/auth/callback/google
 ```
+
+### Verify
+
+Open `https://ai-companion-ngbi.onrender.com/health` and check:
+
+- `googleOAuthConfigured`: true  
+- `convex.urlConfigured` / `convex.siteUrlConfigured`: true  
+- `convex.expectedGoogleCallback`: `https://….convex.site/api/auth/callback/google`  
+
+Add that exact `expectedGoogleCallback` URL in Google Cloud if missing.
 
 ---
 
@@ -101,7 +147,8 @@ python -m unittest tests.test_serve tests.test_deploy -v
 |-------|-----|
 | Build fails | Check Render build logs; confirm `Dockerfile` at repo root |
 | 502 on wake | Normal on Free tier — wait and refresh |
-| Google login error | Redirect URI must match `https://….onrender.com/auth/google/callback` exactly |
+| Google login error | Add **both** Render `/auth/google/callback` and Convex `….convex.site/api/auth/callback/google`; set Convex prod `SITE_URL` to your Render URL |
+| Convex sign-in blocked | `CONVEX_URL` on Render must be **cloud** URL; JWT keys on **Production** deployment; not local `127.0.0.1:3210` |
 | No CSS | Ensure `static/` is in the repo (not in `.dockerignore`) |
 
 See also [DEPLOY.md](DEPLOY.md).

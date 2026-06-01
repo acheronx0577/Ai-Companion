@@ -24,11 +24,13 @@ Required in `.env`: `GROQ_API_KEY` (or `GEMINI_API_KEY`), `FLASK_SECRET_KEY`, `G
 
 Optional local key files (`gemini_key.txt`, `project_id.txt`) are supported by setup scripts but are **gitignored** — do not commit them.
 
-3. Run the app:
+3. Run the app (one terminal — Convex + Flask):
 
 ```bash
-python app.py
+npm run dev
 ```
+
+Or run separately: `npm run convex:dev` and `python app.py`.
 
 Open http://127.0.0.1:5000
 
