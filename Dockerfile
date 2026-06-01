@@ -12,9 +12,10 @@ RUN pip install --no-cache-dir -r requirements-railway.txt
 
 COPY . .
 
-RUN chmod +x scripts/start.sh
+# Windows CRLF in shell scripts breaks Linux; normalize for local Procfile use.
+RUN sed -i 's/\r$//' scripts/start.sh && chmod +x scripts/start.sh
 
 EXPOSE 8080
 
-# Shell wrapper expands $PORT at runtime (exec-form CMD does not).
-CMD ["/bin/sh", "/app/scripts/start.sh"]
+# Python entrypoint avoids shell $PORT / CRLF issues on Railway.
+CMD ["python", "railway_serve.py"]

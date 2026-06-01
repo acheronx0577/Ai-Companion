@@ -89,7 +89,9 @@ git push origin main
 
 **Cause:** `startCommand` or Dockerfile `CMD` passed literal `$PORT` without a shell.
 
-**Fix:** Use `scripts/start.sh` (repo). Remove custom `startCommand` in Railway dashboard if it overrides the Dockerfile.
+**Fix:** Use `scripts/start.sh` (LF line endings only). Remove custom `startCommand` in Railway dashboard.
+
+**Fix:** If healthcheck fails but build OK — often **CRLF** in `start.sh` from Windows (`/bin/sh\r: bad interpreter`). Repo uses `.gitattributes` + `sed` in Dockerfile.
 
 ### Build failed: app has no CSS
 
