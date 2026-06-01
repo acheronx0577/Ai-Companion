@@ -1,6 +1,9 @@
 [variables]
 NIXPACKS_PYTHON_VERSION = "3.12"
 
+[phases.setup]
+nixPkgs = ["python312", "pip"]
+
 # Faster Railway builds: Groq + OAuth only (see requirements-railway.txt)
 [phases.install]
 cmds = ["pip install -r requirements-railway.txt"]
