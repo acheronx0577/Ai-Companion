@@ -9,4 +9,8 @@ export const api = {
     upsertFromAuth: ref(),
     me: ref(),
   },
+  usage: {
+    status: ref(),
+    increment: ref(),
+  },
 };

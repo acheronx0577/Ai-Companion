@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Phase 3: user sync (upsertFromAuth, users.me). */
+/** Phase 4: usage limits in Convex. */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,23 +18,23 @@ function requireIn(file, label, patterns) {
   }
 }
 
-requireIn("convex/users.ts", "users.ts", [
-  "upsertFromAuth",
-  "export const me",
+requireIn("convex/usage.ts", "usage.ts", [
+  "export const status",
+  "export const increment",
+  "export const checkDailyLimit",
   "getAuthUserId",
-  "syncUserFromAuth",
 ]);
-requireIn("convex/userSync.ts", "userSync.ts", ["syncUserFromAuth", "toUserProfile"]);
-requireIn("convex/usersInfo.ts", "usersInfo.ts", ["phase3Status", "users.upsertFromAuth"]);
-requireIn("templates/convex_auth_test.html", "convex_auth_test.html", [
-  "convex-auth-root",
-  "convex_auth_test.mjs",
-  /Phase 3/i,
+requireIn("convex/usageLogic.ts", "usageLogic.ts", [
+  "computeUsageStatusForUser",
+  "recordRateHit",
 ]);
 requireIn("static/convex_auth_test.mjs", "convex_auth_test.mjs", [
-  "upsertFromAuth",
-  "api.users.me",
+  "usage.increment",
+  "Usage (Phase 4)",
 ]);
+requireIn("convex/schema.ts", "schema.ts", ["chatRateState: defineTable", "dailyUsage: defineTable"]);
+requireIn("convex/usageInfo.ts", "usageInfo.ts", ["phase4Status", "usage.increment"]);
+requireIn("usage_limit.py", "usage_limit.py", ["use_convex_usage", "USE_CONVEX_USAGE"]);
 
 if (failed > 0) process.exit(1);
-console.log("Phase 3 user sync layout: OK");
+console.log("Phase 4 usage layout: OK");

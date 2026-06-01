@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#040404">
     <meta name="color-scheme" content="dark">
-    <title>WakuWaku — Convex Auth test (Phase 3)</title>
+    <title>WakuWaku — Convex test (Phase 3–4)</title>
     <link rel="stylesheet" href="/static/style.css?v=20260601c">
     <style>
         .auth-test {
@@ -70,8 +70,8 @@
 </head>
 <body>
     <main class="auth-test" aria-labelledby="auth-test-title">
-        <h1 id="auth-test-title">Convex Auth — Phase 3 test</h1>
-        <p>Sign in with Convex Google OAuth, then sync your profile into the <code>users</code> table via <code>users.upsertFromAuth</code> and <code>users.me</code>. The main app still uses Flask sign-in until Phase 5.</p>
+        <h1 id="auth-test-title">Convex — Phase 3–4 test</h1>
+        <p>Sign in with Convex Google OAuth, sync profile (<code>users.me</code>), then test daily usage (<code>usage.status</code> / <code>usage.increment</code>). The main app still uses Flask until Phase 5.</p>
         {% if convex_site_url and convex_url %}
         <p>Convex site: <code>{{ convex_site_url }}</code></p>
         <div class="auth-test-actions">

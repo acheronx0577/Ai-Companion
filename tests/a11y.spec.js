@@ -141,7 +141,7 @@ test.describe('accessibility', () => {
 
     test('convex auth test exposes sign-in and profile region', async ({ page }) => {
         await page.goto('/convex-auth-test');
-        await expect(page.locator('h1')).toContainText('Phase 3');
+        await expect(page.locator('h1')).toContainText(/Phase 3/i);
         const signIn = page.getByRole('link', { name: /Sign in with Google/i });
         const hasSignIn = (await signIn.count()) > 0;
         const hasSetupAlert = (await page.locator('.auth-test .missing[role="alert"]').count()) > 0;

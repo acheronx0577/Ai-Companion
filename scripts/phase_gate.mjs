@@ -93,6 +93,9 @@ if (phase >= 2) {
 if (phase >= 3) {
   unittestModules.push("tests.test_convex_phase3");
 }
+if (phase >= 4) {
+  unittestModules.push("tests.test_convex_phase4");
+}
 
 run("Deploy + Convex tests", [python, "-m", "unittest", ...unittestModules, "-v"]);
 
@@ -113,9 +116,18 @@ if (phase === 0) {
   run("Convex deploy (once)", "npm run convex:dev:once");
   run("Convex phase3Status", "npx convex run usersInfo:phase3Status");
   run("Convex bootstrapPing (phase 3)", "npx convex run users:bootstrapPing");
-} else if (phase >= 4 && phase <= 6) {
+} else if (phase === 4) {
+  run("Convex Phase 4 usage layout", "npm run test:convex-phase4");
   run("Convex deploy (once)", "npm run convex:dev:once");
-  run("Convex bootstrapPing", "npx convex run users:bootstrapPing", { optional: phase > 3 });
+  run("Convex phase4Status", "npx convex run usageInfo:phase4Status");
+  run(
+    "Convex daily limit check (10 used)",
+    'npx convex run usage:checkDailyLimit "{\\"used\\": 10}"',
+  );
+  run("Convex guest usage status", "npx convex run usage:status");
+} else if (phase >= 5 && phase <= 6) {
+  run("Convex deploy (once)", "npm run convex:dev:once");
+  run("Convex bootstrapPing", "npx convex run users:bootstrapPing", { optional: true });
 }
 
 if (UI_PHASES.has(phase) || phase <= A11Y_BASELINE_MAX_PHASE) {

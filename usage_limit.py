@@ -1,3 +1,5 @@
+"""Daily message limits and chat rate limiting for Flask (file-backed until Convex Phase 5+)."""
+
 import hashlib
 import json
 import os
@@ -14,6 +16,13 @@ CHAT_RATE_WINDOW_SECONDS = 60
 CHAT_RATE_MIN_INTERVAL_SECONDS = 2
 USAGE_STORE_PATH = Path("data/daily_usage.json")
 usage_lock = Lock()
+
+
+def use_convex_usage() -> bool:
+    """When true, Flask skips writing data/daily_usage.json (Convex owns counts from Phase 5+)."""
+    return os.environ.get("USE_CONVEX_USAGE", "").lower() in ("1", "true", "yes")
+
+
 rate_lock = Lock()
 rate_buckets: dict[str, list[float]] = {}
 
@@ -159,6 +168,7 @@ def increment_usage_for_current_request() -> dict:
             day_counts = {}
         day_counts[client_key] = int(day_counts.get(client_key, 0)) + 1
         store[today] = day_counts
-        _save_store(store)
+        if not use_convex_usage():
+            _save_store(store)
     record_rate_limit_hit_for_current_request()
     return usage_status_for_current_request()

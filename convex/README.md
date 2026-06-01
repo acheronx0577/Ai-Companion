@@ -48,6 +48,18 @@ npx convex run usersInfo:phase3Status
 npx convex run users:me   # null when not authenticated from CLI
 ```
 
+## Phase 4 — usage limits
+
+`usage.status` (read-only) and `usage.increment` (auth required). Rate limits stored in `chatRateState`.
+
+```bash
+npm run test:convex-phase4
+npx convex run usageInfo:phase4Status
+npx convex run usage:checkDailyLimit '{"used":10}'
+```
+
+Flask: set `USE_CONVEX_USAGE=1` to stop writing `data/daily_usage.json` (main app still reads Flask usage until Phase 5–6).
+
 ## Phase 1 — schema
 
 Tables: `users`, `dailyUsage`, `chatSessions`, `chatMessages` (chat tables stubbed for Phase 4b).

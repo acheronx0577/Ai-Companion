@@ -68,7 +68,9 @@ Open http://127.0.0.1:5000/convex-auth-test → **Sign in with Google (Convex)**
 
 After redirect, the page auto-calls `users.upsertFromAuth` and shows `users.me` JSON.
 
-After success, check Convex dashboard → **Data** → `users` (`googleSub`, `lastLoginAt`, name, email, picture).
+**Phase 4:** Use **Test increment** to exercise `usage.increment` until `remaining: 0` (11th message blocked).
+
+After success, check Convex dashboard → **Data** → `users`, `dailyUsage`, `chatRateState`.
 
 ## 4. Verify
 

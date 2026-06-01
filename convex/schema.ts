@@ -32,6 +32,13 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_user_date", ["userId", "date"]),
 
+  /** Sliding-window chat rate limits per user (Phase 4). */
+  chatRateState: defineTable({
+    userId: v.id("users"),
+    timestamps: v.array(v.number()),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   chatSessions: defineTable({
     userId: v.id("users"),
     clientSessionId: v.string(),
