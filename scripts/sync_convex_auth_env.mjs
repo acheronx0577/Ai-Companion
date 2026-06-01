@@ -3,7 +3,7 @@
  * Copy GOOGLE_OAUTH_* from .env into Convex AUTH_GOOGLE_* (local dev helper).
  * Requires: npx convex, .env with GOOGLE_OAUTH_CLIENT_ID/SECRET
  */
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,19 @@ function parseEnv(text) {
   return out;
 }
 
+function convexEnvSet(name, value) {
+  const args = ["convex", "env", "set", name, value];
+  if (process.platform === "win32") {
+    execSync(`npx ${args.map((a) => JSON.stringify(a)).join(" ")}`, {
+      cwd: root,
+      stdio: "inherit",
+      shell: true,
+    });
+    return;
+  }
+  execFileSync("npx", args, { cwd: root, stdio: "inherit" });
+}
+
 if (!fs.existsSync(envPath)) {
   console.error("Missing .env");
   process.exit(1);
@@ -36,11 +49,8 @@ if (!id || !secret) {
   process.exit(1);
 }
 
-const npx = process.platform === "win32" ? "npx.cmd" : "npx";
-const run = (args) => execFileSync(npx, args, { cwd: root, stdio: "inherit" });
-
-run(["convex", "env", "set", "AUTH_GOOGLE_ID", id]);
-run(["convex", "env", "set", "AUTH_GOOGLE_SECRET", secret]);
-run(["convex", "env", "set", "SITE_URL", "http://127.0.0.1:5000"]);
+convexEnvSet("AUTH_GOOGLE_ID", id);
+convexEnvSet("AUTH_GOOGLE_SECRET", secret);
+convexEnvSet("SITE_URL", "http://127.0.0.1:5000");
 
 console.log("Convex AUTH_GOOGLE_* and SITE_URL updated from .env");

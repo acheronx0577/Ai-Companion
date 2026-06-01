@@ -1,5 +1,9 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c';
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260602c';
+    const wakuEnv = window.__WAKU_ENV__ || {};
+    const useConvexFrontend = Boolean(wakuEnv.convexEnabled && wakuEnv.convexUrl);
+    let convexUnsubscribe = null;
+    let lastConvexAuthenticated = false;
     const appShell = document.querySelector('.app-shell');
     const textInput = document.getElementById('text-input');
     const sendButton = document.getElementById('send-button');
@@ -169,7 +173,63 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateUsageLimitUi();
     }
 
+    function convexIsReady() {
+        return useConvexFrontend && window.WakuConvex?.isReady?.();
+    }
+
+    function applyConvexSnapshot(snap) {
+        if (!snap) {
+            return;
+        }
+        authState = {
+            authenticated: Boolean(snap.authenticated),
+            oauthConfigured: Boolean(snap.convexConfigured),
+            user: snap.user || null
+        };
+        if (snap.usage) {
+            applyUsageState(snap.usage);
+        }
+        renderAuthUi();
+        if (snap.authenticated && !lastConvexAuthenticated) {
+            void window.WakuConvex.syncFlaskSession().catch(() => {});
+        }
+        lastConvexAuthenticated = Boolean(snap.authenticated);
+    }
+
+    function waitForConvexReady() {
+        if (!useConvexFrontend) {
+            return Promise.resolve(false);
+        }
+        if (convexIsReady()) {
+            return Promise.resolve(true);
+        }
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => resolve(false), 15000);
+            const onReady = () => {
+                clearTimeout(timeout);
+                resolve(convexIsReady());
+            };
+            window.addEventListener('waku-convex-ready', onReady, { once: true });
+        });
+    }
+
+    function bindConvexSubscriber() {
+        if (!convexIsReady() || convexUnsubscribe) {
+            return;
+        }
+        convexUnsubscribe = window.WakuConvex.subscribe((snap) => {
+            applyConvexSnapshot(snap);
+        });
+    }
+
     async function refreshUsageStatus() {
+        if (convexIsReady()) {
+            const snap = window.WakuConvex.getSnapshot();
+            if (snap.usage) {
+                applyUsageState(snap.usage);
+            }
+            return;
+        }
         try {
             const response = await fetch('/usage/status');
             if (!response.ok) {
@@ -218,14 +278,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (googleSignInButton) {
             const disabled = !authState.oauthConfigured;
+            googleSignInButton.disabled = disabled;
             googleSignInButton.setAttribute('aria-disabled', disabled ? 'true' : 'false');
-            if (disabled) {
-                googleSignInButton.removeAttribute('href');
-                googleSignInButton.setAttribute('tabindex', '-1');
-            } else {
-                googleSignInButton.setAttribute('href', '/auth/google');
-                googleSignInButton.removeAttribute('tabindex');
-            }
         }
         if (authConfigWarning) {
             authConfigWarning.hidden = authState.oauthConfigured;
@@ -266,6 +320,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function refreshAuthState() {
+        if (convexIsReady()) {
+            applyConvexSnapshot(window.WakuConvex.getSnapshot());
+            return;
+        }
         try {
             const response = await fetch('/auth/me');
             if (!response.ok) {
@@ -1440,11 +1498,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateAssistantControls();
 
         try {
+            const chatHeaders = {
+                'Content-Type': 'application/json'
+            };
+            if (convexIsReady() && authState.authenticated) {
+                const convexToken = window.WakuConvex.getAuthToken?.();
+                if (convexToken) {
+                    chatHeaders.Authorization = `Bearer ${convexToken}`;
+                }
+            }
+
             const response = await fetch('/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: chatHeaders,
                 body: JSON.stringify({
                     message,
                     session_id: conversation.id,
@@ -1552,11 +1618,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     if (logoutButton) {
         logoutButton.addEventListener('click', async () => {
-            try {
-                await fetch('/auth/logout', { method: 'POST' });
-            } catch (_error) {
-                // ignore network failures
+            if (convexIsReady()) {
+                try {
+                    await window.WakuConvex.signOut();
+                } catch (_error) {
+                    // ignore
+                }
+            } else {
+                try {
+                    await fetch('/auth/logout', { method: 'POST' });
+                } catch (_error) {
+                    // ignore network failures
+                }
             }
+            lastConvexAuthenticated = false;
             await refreshAuthState();
         });
     }
@@ -1634,10 +1709,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
     if (googleSignInButton) {
-        googleSignInButton.addEventListener('click', (event) => {
-            if (googleSignInButton.getAttribute('aria-disabled') === 'true') {
+        googleSignInButton.addEventListener('click', async (event) => {
+            if (googleSignInButton.disabled || googleSignInButton.getAttribute('aria-disabled') === 'true') {
                 event.preventDefault();
+                return;
             }
+            if (convexIsReady()) {
+                event.preventDefault();
+                try {
+                    await window.WakuConvex.signInGoogle();
+                } catch (_error) {
+                    // auth may redirect
+                }
+                return;
+            }
+            window.location.href = '/auth/google';
         });
     }
     floatingMenu.addEventListener('click', (event) => {
@@ -1746,7 +1832,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         setSidebarCollapsed(window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH);
     }
 
-    await refreshAuthState();
+    await waitForConvexReady();
+    bindConvexSubscriber();
+    if (convexIsReady()) {
+        await window.WakuConvex.refresh();
+        applyConvexSnapshot(window.WakuConvex.getSnapshot());
+    } else {
+        await refreshAuthState();
+    }
+    await refreshUsageStatus();
     syncHistoryBackdrop();
 
     if (!loadChatHistory()) {

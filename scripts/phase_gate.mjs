@@ -78,6 +78,16 @@ function checkCleanup() {
 
 console.log(`Phase gate — phase ${phase} (UI-heavy: ${UI_PHASES.has(phase)})`);
 
+if (phase >= 5) {
+  try {
+    run("Convex deploy (once, before tests)", "npm run convex:dev:once");
+  } catch {
+    process.stdout.write(
+      "⚠ Convex deploy skipped (local `convex dev` already running on :3210)\n",
+    );
+  }
+}
+
 run("Python lint (ruff)", "npm run lint");
 const unittestModules = [
   "tests.test_serve",
@@ -95,6 +105,12 @@ if (phase >= 3) {
 }
 if (phase >= 4) {
   unittestModules.push("tests.test_convex_phase4");
+}
+if (phase >= 5) {
+  unittestModules.push("tests.test_convex_phase5");
+}
+if (phase >= 6) {
+  unittestModules.push("tests.test_convex_phase6");
 }
 
 run("Deploy + Convex tests", [python, "-m", "unittest", ...unittestModules, "-v"]);
@@ -125,9 +141,12 @@ if (phase === 0) {
     'npx convex run usage:checkDailyLimit "{\\"used\\": 10}"',
   );
   run("Convex guest usage status", "npx convex run usage:status");
-} else if (phase >= 5 && phase <= 6) {
-  run("Convex deploy (once)", "npm run convex:dev:once");
-  run("Convex bootstrapPing", "npx convex run users:bootstrapPing", { optional: true });
+} else if (phase === 5) {
+  run("Convex Phase 5 frontend layout", "npm run test:convex-phase5");
+  run("Convex phase5Status", "npx convex run frontendInfo:phase5Status");
+} else if (phase === 6) {
+  run("Convex Phase 6 chat bridge layout", "npm run test:convex-phase6");
+  run("Convex phase6Status", "npx convex run chatBridgeInfo:phase6Status");
 }
 
 if (UI_PHASES.has(phase) || phase <= A11Y_BASELINE_MAX_PHASE) {

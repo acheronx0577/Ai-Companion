@@ -44,6 +44,10 @@ npm run phase:gate -- 0
 | `npm run test:convex-phase4` | 4 |
 | `npx convex run usageInfo:phase4Status` | 4 |
 | `npx convex run usage:checkDailyLimit '{"used":10}'` | 4 |
+| `npm run test:convex-phase5` | 5 |
+| `npx convex run frontendInfo:phase5Status` | 5 |
+| `npm run test:convex-phase6` | 6 |
+| `npx convex run chatBridgeInfo:phase6Status` | 6 |
 | `npm run convex:dev:once` | 0–6 |
 | `npx convex run users:bootstrapPing` | 0–3 |
 | `npm run test:a11y` | **0–4** (baseline), **5 & 7** (required), or any UI-touching PR |

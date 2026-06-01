@@ -12,6 +12,7 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, s
 
 from auth import auth_bp, init_auth, user_is_authenticated
 from chat_llm import chat_provider, chat_with_groq
+import convex_usage
 from usage_limit import (
     DAILY_MESSAGE_LIMIT,
     increment_usage_for_current_request,
@@ -166,9 +167,24 @@ def get_gemini_runner():
     return runner
 
 
+def convex_frontend_enabled() -> bool:
+    load_dotenv(".env.local")
+    convex_url = os.environ.get("CONVEX_URL", "").strip()
+    if not convex_url:
+        return False
+    flag = os.environ.get("USE_CONVEX_FRONTEND", "1").lower()
+    return flag not in ("0", "false", "no")
+
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    load_dotenv(".env.local")
+    convex_url = os.environ.get("CONVEX_URL", "").strip()
+    return render_template(
+        "index.html",
+        convex_url=convex_url,
+        convex_enabled=convex_frontend_enabled(),
+    )
 
 
 @app.route("/convex-auth-test")
@@ -268,32 +284,94 @@ async def chat():
             }
         ), 401
 
+    usage_from_convex = False
     usage = usage_status_for_current_request()
-    if not usage["allowed"]:
-        return jsonify(
-            {
-                "error": "Daily trial limit reached for this connection.",
-                "response": trial_limit_message(),
-                "usage": usage,
-                "limitReached": True,
-            }
-        ), 429
 
-    rate = rate_limit_status_for_current_request()
-    if not rate["allowed"]:
-        usage = usage_status_for_current_request()
-        return jsonify(
-            {
-                "error": "Too many messages sent too quickly.",
-                "response": rate_limit_message(rate["retryAfterSeconds"]),
-                "usage": usage,
-                "rateLimit": rate,
-                "rateLimited": True,
-            }
-        ), 429
+    if convex_usage.use_convex_usage():
+        token = convex_usage.bearer_token_from_request(request)
+        if not token:
+            return jsonify(
+                {
+                    "error": "Convex session required.",
+                    "response": (
+                        "Meow! Please sign in again with Google so your chat limit "
+                        "can sync with Convex."
+                    ),
+                    "authRequired": True,
+                }
+            ), 401
+        try:
+            usage = convex_usage.increment_usage_via_convex(token)
+            usage_from_convex = True
+        except ValueError as exc:
+            message = str(exc)
+            if "authentication" in message.lower():
+                return jsonify(
+                    {
+                        "error": message,
+                        "response": (
+                            "Meow! Your sign-in expired — please sign out and "
+                            "sign in with Google again."
+                        ),
+                        "authRequired": True,
+                    }
+                ), 401
+            return jsonify(
+                {
+                    "error": message,
+                    "response": "Meow! I could not verify your message limit. Try again.",
+                }
+            ), 503
+
+        if not usage.get("canSend", False):
+            rate = usage.get("rate") or {}
+            if isinstance(rate, dict) and not rate.get("allowed", True):
+                return jsonify(
+                    {
+                        "error": "Too many messages sent too quickly.",
+                        "response": rate_limit_message(
+                            int(rate.get("retryAfterSeconds") or 1)
+                        ),
+                        "usage": usage,
+                        "rateLimit": rate,
+                        "rateLimited": True,
+                    }
+                ), 429
+            return jsonify(
+                {
+                    "error": "Daily trial limit reached for this connection.",
+                    "response": trial_limit_message(),
+                    "usage": usage,
+                    "limitReached": True,
+                }
+            ), 429
+    else:
+        if not usage["allowed"]:
+            return jsonify(
+                {
+                    "error": "Daily trial limit reached for this connection.",
+                    "response": trial_limit_message(),
+                    "usage": usage,
+                    "limitReached": True,
+                }
+            ), 429
+
+        rate = rate_limit_status_for_current_request()
+        if not rate["allowed"]:
+            usage = usage_status_for_current_request()
+            return jsonify(
+                {
+                    "error": "Too many messages sent too quickly.",
+                    "response": rate_limit_message(rate["retryAfterSeconds"]),
+                    "usage": usage,
+                    "rateLimit": rate,
+                    "rateLimited": True,
+                }
+            ), 429
 
     if not character_exists:
-        usage = increment_usage_for_current_request()
+        if not usage_from_convex:
+            usage = increment_usage_for_current_request()
         return jsonify({"response": user_message, "usage": usage})
 
     if not chat_backend_configured():
@@ -308,7 +386,8 @@ async def chat():
             }
         ), 503
 
-    usage = increment_usage_for_current_request()
+    if not usage_from_convex:
+        usage = increment_usage_for_current_request()
     provider = chat_provider()
     model_message = message_for_response_language(user_message, language)
 

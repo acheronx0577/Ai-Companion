@@ -325,8 +325,8 @@ gantt
 | Step | Status |
 |------|--------|
 | Plan | Done — see `.cursor/memory-bank/tasks.md` (local) or PR list below |
-| Build | Phase 4 done — branch `feat/convex-phase-4-usage` |
-| Creative | Before Phase 5 — auth sidebar + usage meter |
+| Build | Phase 6 done — branch `feat/convex-phase-6-chat-bridge` |
+| Creative | Auth sidebar + usage meter (Phase 5) |
 
 ### PR sequence (one PR per phase — merge before next)
 | # | Branch |

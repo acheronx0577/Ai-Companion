@@ -10,6 +10,8 @@
     "test:convex-phase2": "node scripts/verify_convex_phase2.mjs",
     "test:convex-phase3": "node scripts/verify_convex_phase3.mjs",
     "test:convex-phase4": "node scripts/verify_convex_phase4.mjs",
+    "test:convex-phase5": "node scripts/verify_convex_phase5.mjs",
+    "test:convex-phase6": "node scripts/verify_convex_phase6.mjs",
     "phase:gate": "node scripts/phase_gate.mjs",
     "design:gate": "node scripts/phase_gate.mjs",
     "test:a11y": "playwright test",

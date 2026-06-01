@@ -1,9 +1,11 @@
+"""Flask auth: Google OAuth session routes and Convex session bridge (Phase 5)."""
+
 import os
 import secrets
 
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
-from flask import Blueprint, jsonify, redirect, session, url_for
+from flask import Blueprint, jsonify, redirect, request, session, url_for
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 _oauth_client = None
@@ -102,6 +104,24 @@ def auth_google_callback():
     }
     session.permanent = True
     return redirect(url_for("index"))
+
+
+@auth_bp.route("/convex-bridge", methods=["POST"])
+def auth_convex_bridge():
+    """Phase 5 — set Flask session after Convex Auth (enables /chat until Phase 6)."""
+    payload = request.get_json(silent=True) or {}
+    google_sub = (payload.get("googleSub") or payload.get("id") or "").strip()
+    if not google_sub:
+        return jsonify({"error": "googleSub is required"}), 400
+
+    session["user"] = {
+        "id": google_sub,
+        "email": payload.get("email"),
+        "name": payload.get("name") or payload.get("email") or "Google user",
+        "picture": payload.get("picture"),
+    }
+    session.permanent = True
+    return jsonify({"ok": True, "authenticated": True, "user": session["user"]})
 
 
 @auth_bp.route("/logout", methods=["POST"])

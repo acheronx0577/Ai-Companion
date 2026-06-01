@@ -58,7 +58,16 @@ npx convex run usageInfo:phase4Status
 npx convex run usage:checkDailyLimit '{"used":10}'
 ```
 
-Flask: set `USE_CONVEX_USAGE=1` to stop writing `data/daily_usage.json` (main app still reads Flask usage until Phase 5–6).
+## Phase 6 — Flask `/chat` bridge
+
+Flask calls `POST {CONVEX_SITE_URL}/api/chat/increment-usage` with the user's Convex Auth JWT before running the LLM.
+
+```bash
+npm run test:convex-phase6
+npx convex run chatBridgeInfo:phase6Status
+```
+
+When `CONVEX_URL` is in `.env.local`, `USE_CONVEX_USAGE` defaults on (set `USE_CONVEX_USAGE=0` to use local `daily_usage.json`).
 
 ## Phase 1 — schema
 

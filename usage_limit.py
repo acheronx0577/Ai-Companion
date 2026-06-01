@@ -19,8 +19,10 @@ usage_lock = Lock()
 
 
 def use_convex_usage() -> bool:
-    """When true, Flask skips writing data/daily_usage.json (Convex owns counts from Phase 5+)."""
-    return os.environ.get("USE_CONVEX_USAGE", "").lower() in ("1", "true", "yes")
+    """When true, Flask skips local daily usage (Convex owns counts — see convex_usage.py)."""
+    from convex_usage import use_convex_usage as _use_convex_usage
+
+    return _use_convex_usage()
 
 
 rate_lock = Lock()
@@ -159,6 +161,8 @@ def usage_status_for_current_request() -> dict:
 
 
 def increment_usage_for_current_request() -> dict:
+    if use_convex_usage():
+        return usage_status_for_current_request()
     client_key = get_usage_client_key()
     today = today_key()
     with usage_lock:
@@ -168,7 +172,6 @@ def increment_usage_for_current_request() -> dict:
             day_counts = {}
         day_counts[client_key] = int(day_counts.get(client_key, 0)) + 1
         store[today] = day_counts
-        if not use_convex_usage():
-            _save_store(store)
+        _save_store(store)
     record_rate_limit_hit_for_current_request()
     return usage_status_for_current_request()
