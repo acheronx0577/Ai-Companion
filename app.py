@@ -435,11 +435,30 @@ async def _run_chat_provider(
         return await _gemini_chat_response(session_id, model_message, usage)
     except Exception as exc:
         app.logger.exception("Chat request failed")
+        message = str(exc or "")
         if provider == "groq":
-            hint = (
-                str(exc)
-                or "Check GROQ_API_KEY at console.groq.com (free tier, no card)."
-            )
+            # Treat missing/invalid Groq configuration as a 503 (deploy config issue),
+            # not a generic 500. This avoids confusing users on production.
+            lowered = message.lower()
+            if "groq_api_key is not set" in lowered or "unauthorized" in lowered:
+                return jsonify(
+                    {
+                        "error": message
+                        or "Groq is not configured. Set GROQ_API_KEY in your environment.",
+                        "response": (
+                            "Meow! 서버에 채팅 키가 아직 설정되지 않았어요. "
+                            "관리자가 GROQ_API_KEY(또는 GEMINI_API_KEY)를 설정한 뒤 다시 시도해 주세요."
+                            if (language or "").strip().lower().startswith("ko")
+                            else (
+                                "Meow! Chat isn’t configured on the server yet. "
+                                "Set GROQ_API_KEY (or GEMINI_API_KEY) and try again."
+                            )
+                        ),
+                        "usage": usage,
+                    }
+                ), 503
+
+            hint = message or "Check GROQ_API_KEY at console.groq.com (free tier, no card)."
         else:
             hint = (
                 "The AI could not respond. Check GEMINI_API_KEY, billing, and quota "
