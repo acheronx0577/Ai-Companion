@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Check /voices/status matches current catalog (Daniela, no stale sharvard / device Spanish). */
+/** Check /voices/status matches current catalog (no Spanish / Korean). */
 const base = process.env.WAKU_BASE_URL || "http://127.0.0.1:5000";
 const url = `${base.replace(/\/$/, "")}/voices/status`;
 
@@ -28,22 +28,21 @@ async function main() {
   const piper = data.piperVoices || [];
   const device = data.browserVoiceMenu || [];
 
-  const sharvard = piper.find((v) => String(v.id).includes("sharvard"));
-  if (sharvard) {
-    fail("Stale catalog: es_ES-sharvard-medium still in piperVoices. Restart npm run dev.");
+  for (const lang of ["es", "ko"]) {
+    if (piper.some((v) => v.lang === lang)) {
+      fail(`Piper voice still listed for ${lang}`);
+    }
+    if (device.some((v) => v.lang === lang)) {
+      fail(`Device voice still listed for ${lang}`);
+    }
   }
 
-  const daniela = piper.find((v) => v.id === "es_AR-daniela-high");
-  if (!daniela?.available) {
-    fail("es_AR-daniela-high missing or not available. Run: npm run download:piper-voices");
-  }
-
-  const deviceSpanish = device.find((v) => v.lang === "es");
-  if (deviceSpanish) {
-    fail(
-      `Spanish Device Voice still in browserVoiceMenu ("${deviceSpanish.label}"). `
-        + "Restart npm run dev so Flask loads the latest piper_voices.py."
-    );
+  const expectedPiper = ["en_US-hfc_female-medium", "zh_CN-huayan-medium", "vi_VN-25hours_single-low"];
+  for (const id of expectedPiper) {
+    const row = piper.find((v) => v.id === id);
+    if (!row) {
+      fail(`Missing Piper catalog entry: ${id}`);
+    }
   }
 
   console.log("\nPiper voices (dropdown — Piper voices group):");
@@ -54,7 +53,6 @@ async function main() {
   for (const v of device) {
     console.log(`  • ${v.label}`);
   }
-  console.log("\nBrowser voices: auto-listed per language (no en/es/zh/vi when Piper installed).");
 
   if (failed > 0) {
     process.exit(1);

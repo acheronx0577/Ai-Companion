@@ -1,19 +1,17 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c1';
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c2';
     const GUEST_USAGE_METER_TEXT = 'Sign in for daily trial messages.';
     const MAX_MESSAGE_WORDS = 100;
     const SUPPORTED_CHAT_LANGUAGES = new Set([
-        'en', 'ja', 'es', 'fr', 'de', 'it', 'pt', 'ko', 'zh', 'vi', 'nl', 'pl', 'ru', 'hi', 'ar'
+        'en', 'ja', 'fr', 'de', 'it', 'pt', 'zh', 'vi', 'nl', 'pl', 'ru', 'hi', 'ar'
     ]);
     const CHAT_LANGUAGE_DISPLAY_NAMES = {
         en: 'English',
         ja: 'Japanese',
-        es: 'Spanish',
         fr: 'French',
         de: 'German',
         it: 'Italian',
         pt: 'Portuguese',
-        ko: 'Korean',
         zh: 'Chinese',
         vi: 'Vietnamese',
         nl: 'Dutch',
@@ -24,12 +22,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     const CHAT_INPUT_PLACEHOLDERS = {
         ja: '何でも聞いてください（100語まで）...',
-        es: 'Pregúntame lo que quieras (hasta 100 palabras)...',
         fr: 'Pose-moi une question (100 mots max)...',
         de: 'Frag mich etwas (max. 100 Wörter)...',
         it: 'Chiedimi qualcosa (max 100 parole)...',
         pt: 'Pergunte o que quiser (até 100 palavras)...',
-        ko: '무엇이든 물어보세요(최대 100단어)...',
         zh: '随便问我（最多 100 字）...',
         vi: 'Hỏi tôi bất cứ điều gì (tối đa 100 từ)...',
         nl: 'Stel je vraag (max. 100 woorden)...',
@@ -740,9 +736,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (_error) {
             const trimmed = text.trim().toLowerCase();
             if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
-                throw new Error(
-                    `Server error (${response.status}). Start the app with Flask at http://127.0.0.1:5000 — do not open the HTML file directly.`
-                );
+                const host = window.location.hostname;
+                const isLocal = host === '127.0.0.1' || host === 'localhost';
+                if (window.location.protocol === 'file:') {
+                    throw new Error(
+                        'Cannot load the app from a file URL. Use npm run dev and open http://127.0.0.1:5000'
+                    );
+                }
+                if (isLocal) {
+                    throw new Error(
+                        `Server error (${response.status}). Start the app with npm run dev, then open http://127.0.0.1:5000`
+                    );
+                }
+                if (response.status === 502 || response.status === 503) {
+                    throw new Error(
+                        `Server error (${response.status}). The site may be waking up or restarting — wait a minute and refresh.`
+                    );
+                }
+                throw new Error(`Server error (${response.status}). Please try again in a moment.`);
             }
             throw new Error(`Invalid server response (${response.status}).`);
         }

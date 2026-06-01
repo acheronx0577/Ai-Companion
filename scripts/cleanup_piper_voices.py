@@ -19,6 +19,7 @@ DEPRECATED_VOICE_IDS: frozenset[str] = frozenset(
         "es_ES-mls_9972-low",
         "es_ES-mls_10246-low",
         "es_ES-carlfm-x_low",
+        "es_AR-daniela-high",
     }
 )
 

@@ -25,12 +25,6 @@ PIPER_VOICE_CATALOG: tuple[dict[str, str], ...] = (
         "label": "Piper Natural Voice Female (en-US)",
     },
     {
-        "id": "es_AR-daniela-high",
-        "lang": "es",
-        "locale": "es-AR",
-        "label": "Piper Natural Voice Female (Daniela, es-AR)",
-    },
-    {
         "id": "zh_CN-huayan-medium",
         "lang": "zh",
         "locale": "zh-CN",
@@ -56,11 +50,6 @@ BROWSER_VOICE_MENU: tuple[dict[str, str], ...] = (
         "label": "Japanese Device Voice (ja-JP)",
     },
     {
-        "lang": "ko",
-        "locale": "ko-KR",
-        "label": "Korean Device Voice (ko-KR)",
-    },
-    {
         "lang": "zh",
         "locale": "zh-CN",
         "label": "Chinese Device Voice (zh-CN)",
@@ -71,24 +60,6 @@ BROWSER_VOICE_MENU: tuple[dict[str, str], ...] = (
         "label": "Vietnamese Device Voice (vi-VN)",
     },
 )
-
-# Only offered when no installed Piper voice covers Spanish (e.g. production / Piper off).
-SPANISH_DEVICE_VOICE_MENU_ENTRY: dict[str, str] = {
-    "lang": "es",
-    "locale": "es-ES",
-    "label": "Spanish Device Voice (es-ES)",
-}
-
-
-def spanish_piper_installed() -> bool:
-    if piper_disabled():
-        return False
-    availability = voice_availability()
-    return any(
-        entry["lang"] == "es" and availability.get(entry["id"], False)
-        for entry in PIPER_VOICE_CATALOG
-    )
-
 
 _voice_lock = Lock()
 _voice_cache: dict[str, Any] = {}
@@ -188,8 +159,6 @@ def list_browser_voice_menu(*, hide_piper_languages: bool = True) -> list[dict[s
             if availability.get(entry["id"], False)
         }
         menu = [entry for entry in menu if entry["lang"] not in piper_langs]
-    if not spanish_piper_installed():
-        menu = [dict(SPANISH_DEVICE_VOICE_MENU_ENTRY), *menu]
     return menu
 
 
@@ -263,16 +232,15 @@ def synthesize_text_to_wav(voice, text: str) -> bytes | None:
     cleaned = (text or "").strip()
     if not cleaned:
         return None
-    buffer = io.BytesIO()
-    wrote_audio = False
-    with wave.open(buffer, "wb") as wav_file:
-        for chunk in voice.synthesize(cleaned):
-            if not wrote_audio:
-                wav_file.setframerate(chunk.sample_rate)
-                wav_file.setsampwidth(chunk.sample_width)
-                wav_file.setnchannels(chunk.sample_channels)
-                wrote_audio = True
-            wav_file.writeframes(chunk.audio_int16_bytes)
-    if not wrote_audio:
+    chunks = list(voice.synthesize(cleaned))
+    if not chunks:
         return None
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        first = chunks[0]
+        wav_file.setframerate(first.sample_rate)
+        wav_file.setsampwidth(first.sample_width)
+        wav_file.setnchannels(first.sample_channels)
+        for chunk in chunks:
+            wav_file.writeframes(chunk.audio_int16_bytes)
     return buffer.getvalue()

@@ -27,11 +27,7 @@ def main() -> None:
     ]
     print("Downloading:", ", ".join(voice_ids))
     subprocess.check_call(cmd, cwd=ROOT)
-    print(
-        "\nDone. Piper voices are ready in voices/.\n"
-        "Korean (ko) has no compatible Piper model in piper-tts; "
-        "WakuWaku uses your browser's Korean voice when you select Korean."
-    )
+    print("\nDone. Piper voices are ready in voices/.")
 
 
 if __name__ == "__main__":

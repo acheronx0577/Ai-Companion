@@ -6,12 +6,10 @@ SUPPORTED_CHAT_LANGUAGES = frozenset(
     {
         "en",
         "ja",
-        "es",
         "fr",
         "de",
         "it",
         "pt",
-        "ko",
         "zh",
         "vi",
         "nl",
@@ -25,12 +23,10 @@ SUPPORTED_CHAT_LANGUAGES = frozenset(
 LANGUAGE_DISPLAY_NAMES: dict[str, str] = {
     "en": "English",
     "ja": "Japanese",
-    "es": "Spanish",
     "fr": "French",
     "de": "German",
     "it": "Italian",
     "pt": "Portuguese",
-    "ko": "Korean",
     "zh": "Chinese",
     "vi": "Vietnamese",
     "nl": "Dutch",
@@ -45,10 +41,6 @@ _USER_PREFIXES: dict[str, str] = {
         "【重要】次の返答は日本語のみで書いてください。"
         "音声読み上げ向けに、短く自然な日本語で答えてください。"
         "英語は使わないでください。\n\n"
-    ),
-    "es": (
-        "[Importante] Responde solo en español. Usa frases cortas y naturales "
-        "para lectura en voz alta. No uses inglés.\n\n"
     ),
     "fr": (
         "[Important] Réponds uniquement en français. Phrases courtes et naturelles "
@@ -65,9 +57,6 @@ _USER_PREFIXES: dict[str, str] = {
     "pt": (
         "[Importante] Responda apenas em português. Frases curtas e naturais para voz. "
         "Sem inglês.\n\n"
-    ),
-    "ko": (
-        "[중요] 한국어로만 답변하세요. 음성 읽기에 맞게 짧고 자연스럽게. 영어는 쓰지 마세요.\n\n"
     ),
     "zh": ("【重要】请只用中文回复。句子要简短自然，适合语音朗读。不要使用英文。\n\n"),
     "vi": (
@@ -92,12 +81,10 @@ _USER_PREFIXES: dict[str, str] = {
 
 _SYSTEM_LANGUAGE_RULES: dict[str, str] = {
     "ja": "Reply only in Japanese. Keep answers short (max 3 sentences), cat-like tone, natural meows.",
-    "es": "Reply only in Spanish. Max 3 sentences, playful cat personality.",
     "fr": "Reply only in French. Max 3 sentences, playful cat personality.",
     "de": "Reply only in German. Max 3 sentences, playful cat personality.",
     "it": "Reply only in Italian. Max 3 sentences, playful cat personality.",
     "pt": "Reply only in Portuguese. Max 3 sentences, playful cat personality.",
-    "ko": "Reply only in Korean. Max 3 sentences, playful cat personality.",
     "zh": "Reply only in Chinese. Max 3 sentences, playful cat personality.",
     "vi": "Reply only in Vietnamese. Max 3 sentences, playful cat personality.",
     "nl": "Reply only in Dutch. Max 3 sentences, playful cat personality.",

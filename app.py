@@ -294,7 +294,6 @@ def voices_status():
             "piperVoices": piper_menu,
             "browserVoiceMenu": list_browser_voice_menu(),
             "piperLabel": piper_ready[0].label if piper_ready else None,
-            "koreanUsesBrowserTts": True,
             "lazyLoad": True,
             "maxLoadedVoices": max_loaded_piper_voices(),
             "voiceCatalogVersion": app_config.ASSET_VERSION,
@@ -471,13 +470,8 @@ async def _run_chat_provider(
                         "error": message
                         or "Groq is not configured. Set GROQ_API_KEY in your environment.",
                         "response": (
-                            "Meow! 서버에 채팅 키가 아직 설정되지 않았어요. "
-                            "관리자가 GROQ_API_KEY(또는 GEMINI_API_KEY)를 설정한 뒤 다시 시도해 주세요."
-                            if (language or "").strip().lower().startswith("ko")
-                            else (
-                                "Meow! Chat isn’t configured on the server yet. "
-                                "Set GROQ_API_KEY (or GEMINI_API_KEY) and try again."
-                            )
+                            "Meow! Chat isn’t configured on the server yet. "
+                            "Set GROQ_API_KEY (or GEMINI_API_KEY) and try again."
                         ),
                         "usage": usage,
                     }
