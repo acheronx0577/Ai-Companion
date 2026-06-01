@@ -7,9 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from piper_voices import PIPER_VOICE_CATALOG, VOICES_DIR
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from piper_voices import PIPER_VOICE_CATALOG, VOICES_DIR  # noqa: E402
 
 
 def main() -> None:
