@@ -20,6 +20,7 @@ MarkupSafe==3.0.3
 onnxruntime==1.26.0
 pathvalidate==3.3.1
 piper-tts==1.4.2
+psutil==7.0.0
 pycparser==2.23
 python-dotenv==1.1.1
 requests==2.32.5

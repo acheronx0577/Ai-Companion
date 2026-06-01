@@ -1,7 +1,5 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c18';
-    const PIPER_TTS_FIRST_CHUNK_CHARS = 48;
-    const PIPER_TTS_REST_CHUNK_CHARS = 220;
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c26';
     const PIPER_WARMUP_LOADING_MESSAGE =
         'Loading English voice engine… First load can take 15–30 seconds on the cloud.';
     const PIPER_WARMUP_DONE_MESSAGE = 'Voice engine ready! You can start chatting now.';
@@ -138,6 +136,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const historyBackdrop = document.getElementById('history-backdrop');
     const conversationTitle = document.getElementById('conversation-title');
     const usageMeter = document.getElementById('usage-meter');
+    const metricCpu = document.getElementById('metric-cpu');
+    const metricMemory = document.getElementById('metric-memory');
+    const metricPiper = document.getElementById('metric-piper');
+    const metricUptime = document.getElementById('metric-uptime');
+    const SYSTEM_STATS_POLL_MS = 4000;
 
     const assetQuery = `?v=${ASSET_VERSION}`;
     const openMouthImg = `/static/images/char-mouth-open.png${assetQuery}`;
@@ -151,10 +154,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (characterMouthOpen) {
         characterMouthOpen.src = openMouthImg;
     }
-    const preloadOpen = new Image();
-    preloadOpen.src = openMouthImg;
-    const preloadClosed = new Image();
-    preloadClosed.src = closedMouthImg;
 
     let voices = [];
     let piperCatalogVoices = [];
@@ -176,6 +175,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let lipSyncInterval = null;
     let piperAudioContext = null;
     let activeTtsAudio = null;
+    let activeTtsAbortController = null;
+    const activePiperAudioSources = [];
+    let piperVoiceRunChain = Promise.resolve();
     let activeSpeechId = 0;
     let speechResumeTimer = null;
     let activeChatAbortController = null;
@@ -205,6 +207,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sidebarStorageKey = 'wakuwaku.sidebarCollapsed';
     const chatHistoryStorageKey = 'wakuwaku.chatHistory';
     const voicePreferenceStorageKey = 'wakuwaku.voicePreference';
+    const voicePreferenceVersionKey = 'wakuwaku.voicePreferenceVersion';
+    const VOICE_PREFERENCE_VERSION = 2;
     const piperSessionWarmKey = 'wakuwaku.piperSessionWarm';
     let authState = {
         authenticated: !appShell || !appShell.classList.contains('requires-auth'),
@@ -2056,7 +2060,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function getSelectedSpeechLanguage() {
         const selected = voiceSelect?.selectedOptions[0];
-        const lang = selected?.getAttribute('data-lang') || 'en-US';
+        const lang = selected?.getAttribute('data-target-lang')
+            || selected?.getAttribute('data-lang')
+            || 'ja-JP';
         return normalizeChatLanguage(lang);
     }
 
@@ -2165,24 +2171,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             return false;
         }
         return piperVoicesWarmed.has(voiceId) || isPiperEngineReady();
-    }
-
-    function extractFirstSpeakableClause(text) {
-        const normalized = (text || '').trim();
-        if (!normalized) {
-            return '';
-        }
-        const sentence = normalized.match(/^[^.!?。．！？]+[.!?。．！？]/);
-        if (sentence && sentence[0].trim().length >= 6) {
-            return sentence[0].trim();
-        }
-        if (normalized.length >= 28 && normalized.includes(' ')) {
-            const cut = normalized.lastIndexOf(' ', 28);
-            if (cut >= 10) {
-                return normalized.slice(0, cut + 1).trim();
-            }
-        }
-        return '';
     }
 
     function pcmBase64ToMonoFloat32(base64) {
@@ -2402,6 +2390,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         try {
             window.localStorage.setItem(voicePreferenceStorageKey, JSON.stringify(snapshot));
+            window.localStorage.setItem(voicePreferenceVersionKey, String(VOICE_PREFERENCE_VERSION));
         } catch (_error) {
             // ignore storage failures
         }
@@ -2409,6 +2398,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function loadVoicePreference() {
         try {
+            const storedVersion = Number(window.localStorage.getItem(voicePreferenceVersionKey) || 0);
+            if (storedVersion < VOICE_PREFERENCE_VERSION) {
+                window.localStorage.setItem(voicePreferenceVersionKey, String(VOICE_PREFERENCE_VERSION));
+                window.localStorage.removeItem(voicePreferenceStorageKey);
+                return null;
+            }
             const raw = window.localStorage.getItem(voicePreferenceStorageKey);
             if (!raw) {
                 return null;
@@ -2484,7 +2479,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function applyDefaultVoiceSelection({
         piperReadyVoices,
-        piperAvailable,
         browserVoiceMenu,
         piperOffset,
         usVoiceIndex,
@@ -2495,15 +2489,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (saved && restoreVoiceSelection(saved)) {
             return;
         }
+        const japaneseDeviceIndex = browserVoiceMenu.findIndex((entry) => entry.lang === 'ja');
+        if (japaneseDeviceIndex >= 0) {
+            voiceSelect.selectedIndex = piperReadyVoices.length + japaneseDeviceIndex;
+            return;
+        }
         if (japaneseVoiceIndex !== -1) {
             voiceSelect.selectedIndex = japaneseVoiceIndex + piperOffset;
-        } else if (piperAvailable) {
-            const englishPiperIndex = piperReadyVoices.findIndex((entry) => entry.lang === 'en');
-            voiceSelect.selectedIndex = englishPiperIndex >= 0 ? englishPiperIndex : 0;
-        } else if (browserVoiceMenu.length) {
-            const japaneseDeviceIndex = browserVoiceMenu.findIndex((entry) => entry.lang === 'ja');
-            voiceSelect.selectedIndex = piperReadyVoices.length
-                + (japaneseDeviceIndex >= 0 ? japaneseDeviceIndex : 0);
         } else if (koreanVoiceIndex !== -1) {
             voiceSelect.selectedIndex = koreanVoiceIndex + piperOffset;
         } else if (usVoiceIndex !== -1) {
@@ -2629,7 +2621,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!restored) {
             applyDefaultVoiceSelection({
                 piperReadyVoices,
-                piperAvailable,
                 browserVoiceMenu,
                 piperOffset,
                 usVoiceIndex,
@@ -2671,19 +2662,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         void runPiperStartupWarmup(piperReadyVoices);
     }
 
-    function setCharacterTtsPreparing(active) {
-        if (!characterViewer) {
-            return;
-        }
-        characterViewer.classList.toggle('is-tts-preparing', Boolean(active));
-    }
-
     function startLipSync() {
         if (!characterViewer || prefersReducedMotion()) {
             return;
         }
-        setCharacterTtsPreparing(false);
-        characterViewer.classList.add('is-lip-sync');
+        clearInterval(lipSyncInterval);
+        let mouthOpen = false;
+        characterViewer.classList.remove('mouth-open');
+        lipSyncInterval = setInterval(() => {
+            mouthOpen = !mouthOpen;
+            characterViewer.classList.toggle('mouth-open', mouthOpen);
+        }, 150);
     }
 
     function stopLipSync() {
@@ -2691,10 +2680,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             clearInterval(lipSyncInterval);
             lipSyncInterval = null;
         }
-        if (!characterViewer) {
-            return;
-        }
-        characterViewer.classList.remove('is-lip-sync', 'is-tts-preparing');
+        characterViewer?.classList.remove('mouth-open');
     }
 
     function isAssistantBusy() {
@@ -2711,10 +2697,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function stopActivePiperWebAudio() {
+        while (activePiperAudioSources.length) {
+            const source = activePiperAudioSources.pop();
+            try {
+                source.stop();
+            } catch (_error) {
+                // already stopped
+            }
+        }
+    }
+
+    function abortActivePiperFetch() {
+        if (activeTtsAbortController) {
+            activeTtsAbortController.abort();
+            activeTtsAbortController = null;
+        }
+    }
+
     function stopAllSpeech({ cancelBrowserTts = true } = {}) {
         activeSpeechId += 1;
         speechInProgress = false;
         stopLipSync();
+        abortActivePiperFetch();
+        stopActivePiperWebAudio();
         if (
             cancelBrowserTts
             && 'speechSynthesis' in window
@@ -2732,6 +2738,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             speechResumeTimer = null;
         }
         updateAssistantControls();
+    }
+
+    function runExclusivePiperVoice(task) {
+        const run = piperVoiceRunChain.then(() => task());
+        piperVoiceRunChain = run.catch(() => {});
+        return run;
     }
 
     function stopAssistant() {
@@ -2786,32 +2798,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         pushCurrent();
         return chunks.length ? chunks : [normalized];
-    }
-
-    /** First sentence (capped) plays ASAP; rest uses larger chunks fetched in parallel. */
-    function splitTextForPiperTts(text) {
-        const normalized = (text || '').replace(/\s+/g, ' ').trim();
-        if (!normalized) {
-            return [];
-        }
-
-        const sentenceParts = normalized
-            .split(/(?<=[。．！？!?…])|(?<=[.!?])\s+/)
-            .map((part) => part.trim())
-            .filter(Boolean);
-        let first = sentenceParts.length ? sentenceParts[0] : normalized;
-        if (first.length > PIPER_TTS_FIRST_CHUNK_CHARS) {
-            first = first.slice(0, PIPER_TTS_FIRST_CHUNK_CHARS).trim();
-        }
-        if (!first) {
-            first = normalized.slice(0, PIPER_TTS_FIRST_CHUNK_CHARS).trim();
-        }
-
-        const rest = normalized.slice(first.length).trim();
-        if (!rest) {
-            return [first];
-        }
-        return [first, ...splitTextForSpeech(rest, PIPER_TTS_REST_CHUNK_CHARS)];
     }
 
     function willUsePiperTtsForSession() {
@@ -2939,7 +2925,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    async function fetchPiperAudioBlob(text, piperVoiceId) {
+    async function fetchPiperAudioBlob(text, piperVoiceId, fetchSignal) {
         const ttsResponse = await fetch('/tts', {
             method: 'POST',
             headers: {
@@ -2948,7 +2934,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             body: JSON.stringify({
                 text,
                 voice: piperVoiceId
-            })
+            }),
+            signal: fetchSignal
         });
         if (!ttsResponse.ok) {
             return null;
@@ -2962,29 +2949,77 @@ document.addEventListener('DOMContentLoaded', async () => {
             return false;
         }
 
+        abortActivePiperFetch();
+        stopActivePiperWebAudio();
+        const fetchController = new AbortController();
+        activeTtsAbortController = fetchController;
+        const fetchSignal = fetchController.signal;
+
         const ctx = ensurePiperAudioContext();
         if (!ctx) {
-            const blob = await fetchPiperAudioBlob(normalized, piperVoiceId);
-            return blob ? playAudioBlob(blob, speechId) : false;
+            try {
+                const blob = await fetchPiperAudioBlob(normalized, piperVoiceId, fetchSignal);
+                if (!blob || speechId !== activeSpeechId) {
+                    return false;
+                }
+                return playAudioBlob(blob, speechId);
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    return false;
+                }
+                throw error;
+            } finally {
+                if (activeTtsAbortController === fetchController) {
+                    activeTtsAbortController = null;
+                }
+            }
         }
         if (ctx.state === 'suspended') {
             await ctx.resume();
         }
 
-        const streamResponse = await fetch('/tts/stream', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/x-ndjson'
-            },
-            body: JSON.stringify({
-                text: normalized,
-                voice: piperVoiceId
-            })
-        });
+        let streamResponse;
+        try {
+            streamResponse = await fetch('/tts/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/x-ndjson'
+                },
+                body: JSON.stringify({
+                    text: normalized,
+                    voice: piperVoiceId
+                }),
+                signal: fetchSignal
+            });
+        } catch (error) {
+            if (error.name === 'AbortError' || speechId !== activeSpeechId) {
+                return false;
+            }
+            throw error;
+        } finally {
+            if (activeTtsAbortController === fetchController) {
+                activeTtsAbortController = null;
+            }
+        }
+
+        if (speechId !== activeSpeechId) {
+            return false;
+        }
+
         if (!streamResponse.ok) {
-            const blob = await fetchPiperAudioBlob(normalized, piperVoiceId);
-            return blob ? playAudioBlob(blob, speechId) : false;
+            try {
+                const blob = await fetchPiperAudioBlob(normalized, piperVoiceId, fetchSignal);
+                if (!blob || speechId !== activeSpeechId) {
+                    return false;
+                }
+                return playAudioBlob(blob, speechId);
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    return false;
+                }
+                throw error;
+            }
         }
 
         let sampleRate = 22050;
@@ -3014,10 +3049,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 source.connect(ctx.destination);
                 const startAt = Math.max(nextTime, ctx.currentTime);
                 source.start(startAt);
+                activePiperAudioSources.push(source);
+                source.onended = () => {
+                    const index = activePiperAudioSources.indexOf(source);
+                    if (index >= 0) {
+                        activePiperAudioSources.splice(index, 1);
+                    }
+                };
                 nextTime = startAt + audioBuffer.duration;
                 if (!started) {
                     started = true;
-                    setCharacterTtsPreparing(false);
                     startLipSync();
                 }
             }
@@ -3315,7 +3356,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             audio.addEventListener('play', () => {
                 if (speechId === activeSpeechId) {
-                    setCharacterTtsPreparing(false);
                     startLipSync();
                 }
             });
@@ -3345,25 +3385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return false;
         }
 
-        if (speechId === activeSpeechId) {
-            setCharacterTtsPreparing(true);
-        }
-
-        const chunks = splitTextForPiperTts(text);
-        if (chunks.length <= 1) {
-            return playPiperNdjsonStream(text, piperVoiceId, speechId);
-        }
-
-        for (const chunk of chunks) {
-            if (speechId !== activeSpeechId) {
-                return false;
-            }
-            const played = await playPiperNdjsonStream(chunk, piperVoiceId, speechId);
-            if (!played) {
-                return false;
-            }
-        }
-        return true;
+        return runExclusivePiperVoice(() => playPiperNdjsonStream(text, piperVoiceId, speechId));
     }
 
     async function speak(text) {
@@ -3379,10 +3401,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateAssistantControls();
 
         const usingPiper = shouldUsePiperTts();
-        if (usingPiper && speechId === activeSpeechId) {
-            setCharacterTtsPreparing(true);
-        }
-
         try {
             if (!usingPiper) {
                 await speakWithBrowserVoice(normalized, speechId);
@@ -3458,14 +3476,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setMessageListBusy(true);
         updateAssistantControls();
 
-        const usingPiper = shouldUsePiperTts();
-        const piperVoiceId = usingPiper
-            ? (getSelectedPiperVoiceId()
-                || findAvailablePiperVoiceForLanguage(getSelectedSpeechLanguage())?.id)
-            : null;
         let responseText = '';
-        let earlyTtsClause = '';
-        let earlyTtsPromise = null;
 
         try {
             const chatHeaders = {
@@ -3518,25 +3529,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 if (event.delta) {
                     responseText += event.delta;
-                    if (
-                        usingPiper
-                        && piperVoiceId
-                        && isPiperReadyForSpeech(piperVoiceId)
-                        && !earlyTtsPromise
-                    ) {
-                        const clause = extractFirstSpeakableClause(responseText);
-                        if (clause) {
-                            earlyTtsClause = clause;
-                            speechInProgress = true;
-                            updateAssistantControls();
-                            setCharacterTtsPreparing(true);
-                            earlyTtsPromise = playPiperNdjsonStream(
-                                clause,
-                                piperVoiceId,
-                                speechId
-                            );
-                        }
-                    }
                 }
             });
 
@@ -3587,35 +3579,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const finalText = (data.response || '').trim() || '(No response returned)';
             appendMessage('ai', finalText);
             activeChatAbortController = null;
-
-            if (usingPiper && piperVoiceId) {
-                if (!isPiperReadyForSpeech(piperVoiceId)) {
-                    await ensurePiperModelReady(piperVoiceId);
-                }
-                if (speechId !== activeSpeechId) {
-                    return;
-                }
-                speechInProgress = true;
-                updateAssistantControls();
-                try {
-                    if (earlyTtsPromise) {
-                        await earlyTtsPromise;
-                        const remainder = finalText.slice(earlyTtsClause.length).trim();
-                        if (remainder && speechId === activeSpeechId) {
-                            await playPiperNdjsonStream(remainder, piperVoiceId, speechId);
-                        }
-                    } else if (speechId === activeSpeechId) {
-                        setCharacterTtsPreparing(true);
-                        await speakWithPiperVoice(finalText, speechId);
-                    }
-                } finally {
-                    if (speechId === activeSpeechId) {
-                        speechInProgress = false;
-                        stopLipSync();
-                        updateAssistantControls();
-                    }
-                }
-            } else if (speechId === activeSpeechId) {
+            if (speechId === activeSpeechId) {
                 await speak(finalText);
             }
         } catch (error) {
@@ -4161,6 +4125,112 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
         window.addEventListener('load', () => {
             document.body.classList.remove('preload');
+        });
+    }
+
+    function formatUptime(seconds) {
+        const total = Math.max(0, Number(seconds) || 0);
+        if (total < 60) {
+            return `${total}s`;
+        }
+        const minutes = Math.floor(total / 60);
+        if (minutes < 60) {
+            return `${minutes}m`;
+        }
+        const hours = Math.floor(minutes / 60);
+        const remMin = minutes % 60;
+        return remMin ? `${hours}h ${remMin}m` : `${hours}h`;
+    }
+
+    function setMetricTone(element, percent, warnAt, hotAt) {
+        if (!element || typeof percent !== 'number') {
+            return;
+        }
+        element.classList.remove('is-warn', 'is-hot');
+        if (percent >= hotAt) {
+            element.classList.add('is-hot');
+        } else if (percent >= warnAt) {
+            element.classList.add('is-warn');
+        }
+    }
+
+    function updateServerMetricsPanel(data) {
+        if (!data) {
+            return;
+        }
+        if (metricCpu) {
+            const cpu = data.cpuPercent;
+            metricCpu.textContent = typeof cpu === 'number' ? `${cpu}%` : '—';
+            setMetricTone(metricCpu, cpu, 70, 90);
+        }
+        if (metricMemory) {
+            const mb = data.memoryMb;
+            const pct = data.memoryPercent;
+            if (typeof mb === 'number') {
+                metricMemory.textContent = `${mb} MB`;
+                if (typeof pct === 'number') {
+                    setMetricTone(metricMemory, pct, 75, 90);
+                }
+            } else {
+                metricMemory.textContent = '—';
+            }
+        }
+        if (metricPiper) {
+            if (data.piperSynthesisBusy) {
+                metricPiper.textContent = 'Speaking';
+            } else {
+                metricPiper.textContent = data.piperModelLoaded ? 'Loaded' : 'Idle';
+            }
+            metricPiper.classList.toggle('is-warn', !data.piperModelLoaded && !data.piperSynthesisBusy);
+        }
+        if (metricUptime) {
+            metricUptime.textContent = formatUptime(data.uptimeSec);
+        }
+    }
+
+    async function refreshServerMetrics() {
+        if (!metricCpu && !metricMemory) {
+            return;
+        }
+        if (appShell?.classList.contains('sidebar-collapsed')) {
+            return;
+        }
+        try {
+            const response = await fetch('/system/stats', { cache: 'no-store' });
+            if (!response.ok) {
+                return;
+            }
+            updateServerMetricsPanel(await response.json());
+        } catch (_error) {
+            // ignore polling errors
+        }
+    }
+
+    let metricsPollTimer = null;
+
+    function startMetricsPolling() {
+        if (metricsPollTimer) {
+            window.clearInterval(metricsPollTimer);
+        }
+        const tick = () => {
+            if (document.visibilityState === 'visible') {
+                void refreshServerMetrics();
+            }
+        };
+        void tick();
+        metricsPollTimer = window.setInterval(tick, SYSTEM_STATS_POLL_MS);
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            void refreshServerMetrics();
+        }
+    });
+
+    startMetricsPolling();
+    if (toggleHistoryButton) {
+        toggleHistoryButton.addEventListener('click', () => {
+            window.setTimeout(refreshServerMetrics, 360);
         });
     }
 

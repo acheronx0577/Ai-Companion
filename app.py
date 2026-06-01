@@ -35,6 +35,7 @@ from usage_limit import (
 )
 
 import app_config
+from system_stats import system_stats_payload
 from piper_voices import (
     DEVICE_LANGS_ALWAYS,
     default_piper_voice_id,
@@ -47,6 +48,7 @@ from piper_voices import (
     max_loaded_piper_voices,
     piper_disabled,
     piper_model_loaded,
+    piper_synthesis_busy,
     synthesize_text_to_wav,
     voice_files_present,
     resolve_piper_voice_id,
@@ -103,7 +105,8 @@ def production_cache_headers(response):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return response
 
-API_JSON_PREFIXES = ("/chat", "/tts", "/voices/", "/usage/", "/auth/")
+
+API_JSON_PREFIXES = ("/chat", "/tts", "/voices/", "/usage/", "/auth/", "/system/")
 
 
 def is_api_json_request():
@@ -217,6 +220,7 @@ def index():
         convex_enabled=convex_frontend_enabled(),
         authenticated=user_is_authenticated(),
         asset_version=app_config.ASSET_VERSION,
+        github_repo_url=app_config.GITHUB_REPO_URL,
     )
 
 
@@ -297,6 +301,19 @@ def usage_status():
     return jsonify(usage_status_for_current_request())
 
 
+@app.route("/system/stats")
+def system_stats():
+    """Process CPU/RAM for the sidebar metrics panel (polled by the client)."""
+    response = jsonify(
+        system_stats_payload(
+            piper_model_loaded=piper_model_loaded(),
+            piper_synthesis_busy=piper_synthesis_busy(),
+        )
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/voices/status")
 def voices_status():
     try:
@@ -310,6 +327,7 @@ def voices_status():
         {
             "piperAvailable": len(piper_ready) > 0,
             "piperModelLoaded": piper_model_loaded(),
+            "piperSynthesisBusy": piper_synthesis_busy(),
             "piperVoices": piper_menu,
             "browserVoiceMenu": list_browser_voice_menu(),
             "piperLabel": piper_ready[0].label if piper_ready else None,
@@ -521,7 +539,10 @@ async def _run_chat_provider(
                     }
                 ), 503
 
-            hint = message or "Check GROQ_API_KEY at console.groq.com (free tier, no card)."
+            hint = (
+                message
+                or "Check GROQ_API_KEY at console.groq.com (free tier, no card)."
+            )
         else:
             hint = (
                 "The AI could not respond. Check GEMINI_API_KEY, billing, and quota "
@@ -620,15 +641,18 @@ async def chat_stream():
             status = 200
 
         def fallback_once():
-            yield json.dumps(
-                {
-                    "delta": data.get("response") or "",
-                    "done": True,
-                    "usage": data.get("usage") or usage,
-                    "error": data.get("error"),
-                    "httpStatus": status,
-                }
-            ) + "\n"
+            yield (
+                json.dumps(
+                    {
+                        "delta": data.get("response") or "",
+                        "done": True,
+                        "usage": data.get("usage") or usage,
+                        "error": data.get("error"),
+                        "httpStatus": status,
+                    }
+                )
+                + "\n"
+            )
 
         return Response(
             stream_with_context(fallback_once()),
@@ -700,7 +724,10 @@ def tts_stream():
                 yield line
         except Exception:
             app.logger.exception("Piper stream synthesis failed for voice %s", voice_id)
-            yield json.dumps({"type": "error", "message": "Piper synthesis failed"}) + "\n"
+            yield (
+                json.dumps({"type": "error", "message": "Piper synthesis failed"})
+                + "\n"
+            )
 
     return Response(
         stream_with_context(generate()),

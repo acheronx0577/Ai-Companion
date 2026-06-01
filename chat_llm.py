@@ -153,7 +153,9 @@ def iter_chat_with_groq(
 
     parts: list[str] = []
     with httpx.Client(timeout=60.0) as client:
-        with client.stream("POST", GROQ_CHAT_URL, json=payload, headers=headers) as response:
+        with client.stream(
+            "POST", GROQ_CHAT_URL, json=payload, headers=headers
+        ) as response:
             if response.status_code == 429:
                 raise RuntimeError(
                     "Groq rate limit reached. Wait a minute and try again, or check console.groq.com."

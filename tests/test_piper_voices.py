@@ -90,7 +90,9 @@ class PiperVoiceCatalogTests(unittest.TestCase):
         voice = get_piper_voice(default_piper_voice_id())
         events = [
             json.loads(line)
-            for line in iter_tts_stream_events(voice, "Hi!", voice_id=default_piper_voice_id())
+            for line in iter_tts_stream_events(
+                voice, "Hi!", voice_id=default_piper_voice_id()
+            )
             if line.strip()
         ]
         types = [event.get("type") for event in events]

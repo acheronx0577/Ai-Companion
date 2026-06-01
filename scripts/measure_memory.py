@@ -45,7 +45,11 @@ def main() -> None:
     flask_mod = importlib.import_module("app")
     _ = flask_mod.app
     line("After Flask app import")
-    from piper_voices import get_piper_voice, synthesize_text_to_wav, voice_files_present
+    from piper_voices import (
+        get_piper_voice,
+        synthesize_text_to_wav,
+        voice_files_present,
+    )
 
     line("After piper_voices import")
     if voice_files_present("en_US-hfc_female-medium"):

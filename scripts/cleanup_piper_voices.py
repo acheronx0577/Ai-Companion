@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from piper_voices import PIPER_VOICE_CATALOG, VOICES_DIR  # pylint: disable=wrong-import-position
+from piper_voices import PIPER_VOICE_CATALOG, VOICES_DIR  # noqa: E402
 
 # Retired male / duplicate Spanish models — safe to delete if still on disk.
 DEPRECATED_VOICE_IDS: frozenset[str] = frozenset(
