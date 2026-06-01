@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import io
+import json
 import os
 import wave
+from collections import OrderedDict
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +48,8 @@ BROWSER_VOICE_MENU: tuple[dict[str, str], ...] = (
 
 _voice_lock = Lock()
 _voice_cache: dict[str, Any] = {}
+_tts_wav_cache: OrderedDict[tuple[str, str], bytes] = OrderedDict()
+_TTS_WAV_CACHE_MAX = 64
 _availability_cache: dict[str, bool] | None = None
 _availability_stamp: float = 0.0
 
@@ -101,6 +106,18 @@ def clear_piper_runtime_cache() -> None:
     """Drop loaded models (tests / memory pressure)."""
     with _voice_lock:
         _voice_cache.clear()
+    _tts_wav_cache.clear()
+
+
+def piper_model_loaded(voice_id: str | None = None) -> bool:
+    """True when the ONNX model is already in this worker's memory."""
+    if piper_disabled():
+        return False
+    resolved_id = resolve_piper_voice_id(voice_id)
+    if not resolved_id:
+        return False
+    with _voice_lock:
+        return resolved_id in _voice_cache
 
 
 @dataclass(frozen=True)
@@ -189,6 +206,30 @@ def iter_warmup_piper_voice(
     if piper_disabled():
         yield {"progress": 100, "message": "Piper is disabled on the server", "ok": False}
         return
+    resolved_id = resolve_piper_voice_id(voice_id)
+    if resolved_id and piper_model_loaded(resolved_id):
+        yield {"progress": 40, "message": "Voice engine still loaded…"}
+        voice = get_piper_voice(voice_id)
+        yield {"progress": 75, "message": "Verifying audio…"}
+        warmed = (
+            voice is not None
+            and synthesize_text_to_wav(voice, "Voice engine is ready. Hello!") is not None
+        )
+        if warmed:
+            yield {
+                "progress": 100,
+                "message": "Voice engine ready! You can start chatting now.",
+                "ok": True,
+                "voiceId": resolved_id,
+                "cached": True,
+            }
+        else:
+            yield {
+                "progress": 100,
+                "message": "Warmup speech failed — try again or switch voice",
+                "ok": False,
+            }
+        return
     yield {"progress": 15, "message": "Loading voice model into memory…"}
     voice = get_piper_voice(voice_id)
     if voice is None:
@@ -254,11 +295,86 @@ def get_piper_voice(voice_id: str | None = None):
         return loaded
 
 
-def synthesize_text_to_wav(voice, text: str) -> bytes | None:
+def iter_tts_stream_events(
+    voice,
+    text: str,
+    *,
+    voice_id: str | None = None,
+) -> Iterator[str]:
+    """NDJSON lines: meta (sample rate) → pcm chunks → done. Plays before full WAV exists."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        yield json.dumps({"type": "error", "message": "Empty text"}) + "\n"
+        return
+    if voice_id:
+        cached = _tts_wav_cache.get((voice_id, cleaned))
+        if cached is not None:
+            _tts_wav_cache.move_to_end((voice_id, cleaned))
+            yield from _wav_bytes_to_stream_events(cached)
+            return
+    meta_sent = False
+    for chunk in voice.synthesize(cleaned):
+        if not meta_sent:
+            yield json.dumps(
+                {
+                    "type": "meta",
+                    "sampleRate": chunk.sample_rate,
+                    "channels": chunk.sample_channels or 1,
+                }
+            ) + "\n"
+            meta_sent = True
+        yield json.dumps(
+            {
+                "type": "pcm",
+                "data": base64.b64encode(chunk.audio_int16_bytes).decode("ascii"),
+            }
+        ) + "\n"
+    if not meta_sent:
+        yield json.dumps({"type": "error", "message": "No audio produced"}) + "\n"
+        return
+    yield json.dumps({"type": "done"}) + "\n"
+
+
+def _wav_bytes_to_stream_events(wav_bytes: bytes) -> Iterator[str]:
+    """Replay cached WAV as the same NDJSON stream shape."""
+    with wave.open(io.BytesIO(wav_bytes), "rb") as wav_handle:
+        sample_rate = wav_handle.getframerate()
+        channels = wav_handle.getnchannels()
+        sample_width = wav_handle.getsampwidth()
+        if sample_width != 2:
+            yield json.dumps({"type": "error", "message": "Unsupported WAV format"}) + "\n"
+            return
+        yield json.dumps(
+            {"type": "meta", "sampleRate": sample_rate, "channels": channels}
+        ) + "\n"
+        frames_per_chunk = max(256, sample_rate // 4)
+        while True:
+            pcm = wav_handle.readframes(frames_per_chunk)
+            if not pcm:
+                break
+            yield json.dumps(
+                {"type": "pcm", "data": base64.b64encode(pcm).decode("ascii")}
+            ) + "\n"
+    yield json.dumps({"type": "done"}) + "\n"
+
+
+def synthesize_text_to_wav(
+    voice,
+    text: str,
+    *,
+    voice_id: str | None = None,
+) -> bytes | None:
     """Synthesize text to WAV bytes. Returns None when Piper yields no audio (e.g. '.')."""
     cleaned = (text or "").strip()
     if not cleaned:
         return None
+    cache_key: tuple[str, str] | None = None
+    if voice_id:
+        cache_key = (voice_id, cleaned)
+        cached = _tts_wav_cache.get(cache_key)
+        if cached is not None:
+            _tts_wav_cache.move_to_end(cache_key)
+            return cached
     buffer = io.BytesIO()
     try:
         with wave.open(buffer, "wb") as wav_handle:
@@ -268,4 +384,9 @@ def synthesize_text_to_wav(voice, text: str) -> bytes | None:
     data = buffer.getvalue()
     if len(data) < 44:
         return None
+    if cache_key is not None:
+        _tts_wav_cache[cache_key] = data
+        _tts_wav_cache.move_to_end(cache_key)
+        while len(_tts_wav_cache) > _TTS_WAV_CACHE_MAX:
+            _tts_wav_cache.popitem(last=False)
     return data

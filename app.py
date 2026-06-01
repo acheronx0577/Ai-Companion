@@ -20,7 +20,7 @@ from flask import (
 )
 
 from auth import auth_bp, init_auth, user_is_authenticated
-from chat_llm import chat_provider, chat_with_groq
+from chat_llm import chat_provider, chat_with_groq, iter_chat_with_groq
 import convex_usage
 from chat_language import message_for_response_language
 from message_limits import (
@@ -39,12 +39,14 @@ from piper_voices import (
     DEVICE_LANGS_ALWAYS,
     default_piper_voice_id,
     get_piper_voice,
+    iter_tts_stream_events,
     iter_warmup_piper_voice,
     list_available_piper_voices,
     list_browser_voice_menu,
     list_piper_voice_menu,
     max_loaded_piper_voices,
     piper_disabled,
+    piper_model_loaded,
     synthesize_text_to_wav,
     voice_files_present,
     resolve_piper_voice_id,
@@ -275,6 +277,7 @@ def health():
             "piper": {
                 "disabled": piper_disabled(),
                 "modelPresent": piper_files,
+                "modelLoaded": piper_model_loaded(),
                 "voiceCount": len(list_available_piper_voices()),
             },
         }
@@ -306,6 +309,7 @@ def voices_status():
     response = jsonify(
         {
             "piperAvailable": len(piper_ready) > 0,
+            "piperModelLoaded": piper_model_loaded(),
             "piperVoices": piper_menu,
             "browserVoiceMenu": list_browser_voice_menu(),
             "piperLabel": piper_ready[0].label if piper_ready else None,
@@ -568,6 +572,86 @@ async def chat():
     return await _run_chat_provider(session_id, model_message, language, usage)
 
 
+@app.route("/chat/stream", methods=["POST"])
+async def chat_stream():
+    """Stream Groq tokens as NDJSON; falls back to one-shot JSON when not using Groq."""
+    payload = request.get_json(silent=True) or {}
+    user_message, session_id, language = _parse_chat_payload(payload)
+
+    precheck_error = _chat_request_precheck(user_message)
+    if precheck_error is not None:
+        return precheck_error
+
+    usage, usage_from_convex, usage_error = _resolve_chat_usage()
+    if usage_error is not None:
+        return usage_error
+
+    if not character_exists:
+        if not usage_from_convex:
+            usage = increment_usage_for_current_request()
+        return jsonify({"response": user_message, "usage": usage})
+
+    if not chat_backend_configured():
+        return jsonify(
+            {
+                "error": (
+                    "No chat API configured. Set GROQ_API_KEY (free, no credit card) or "
+                    "GEMINI_API_KEY in .env — see README."
+                ),
+                "response": "",
+                "usage": usage,
+            }
+        ), 503
+
+    if not usage_from_convex:
+        usage = increment_usage_for_current_request()
+    model_message = message_for_response_language(user_message, language)
+
+    if chat_provider() != "groq":
+        provider_result = await _run_chat_provider(
+            session_id, model_message, language, usage
+        )
+        if isinstance(provider_result, tuple):
+            body, status = provider_result
+            data = body.get_json()
+        else:
+            body = provider_result
+            data = body.get_json()
+            status = 200
+
+        def fallback_once():
+            yield json.dumps(
+                {
+                    "delta": data.get("response") or "",
+                    "done": True,
+                    "usage": data.get("usage") or usage,
+                    "error": data.get("error"),
+                    "httpStatus": status,
+                }
+            ) + "\n"
+
+        return Response(
+            stream_with_context(fallback_once()),
+            mimetype="application/x-ndjson",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    def generate():
+        try:
+            for delta in iter_chat_with_groq(session_id, model_message, language):
+                yield json.dumps({"delta": delta}) + "\n"
+            yield json.dumps({"done": True, "usage": usage}) + "\n"
+        except Exception as exc:
+            app.logger.exception("Chat stream failed")
+            yield json.dumps({"error": str(exc), "done": True}) + "\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="application/x-ndjson",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.route("/tts", methods=["POST"])
 def tts():
     payload = request.get_json(silent=True) or {}
@@ -581,7 +665,7 @@ def tts():
         return jsonify({"error": "Piper voice unavailable"}), 503
 
     try:
-        wav_bytes = synthesize_text_to_wav(voice, text)
+        wav_bytes = synthesize_text_to_wav(voice, text, voice_id=voice_id)
     except Exception:
         app.logger.exception("Piper synthesis failed for voice %s", voice_id)
         return jsonify({"error": "Piper synthesis failed"}), 503
@@ -594,6 +678,34 @@ def tts():
         mimetype="audio/wav",
         as_attachment=False,
         download_name="tts.wav",
+    )
+
+
+@app.route("/tts/stream", methods=["POST"])
+def tts_stream():
+    """Stream Piper PCM as NDJSON so playback can start before synthesis finishes."""
+    payload = request.get_json(silent=True) or {}
+    text = (payload.get("text") or "").strip()
+    voice_id = (payload.get("voice") or "").strip() or default_piper_voice_id()
+    if not text:
+        return jsonify({"error": "Missing text"}), 400
+
+    voice = get_piper_voice(voice_id)
+    if voice is None:
+        return jsonify({"error": "Piper voice unavailable"}), 503
+
+    def generate():
+        try:
+            for line in iter_tts_stream_events(voice, text, voice_id=voice_id):
+                yield line
+        except Exception:
+            app.logger.exception("Piper stream synthesis failed for voice %s", voice_id)
+            yield json.dumps({"type": "error", "message": "Piper synthesis failed"}) + "\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="application/x-ndjson",
+        headers={"Cache-Control": "no-store"},
     )
 
 

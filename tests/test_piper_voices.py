@@ -3,6 +3,8 @@
 import os
 import unittest
 
+import json
+
 from piper_voices import (
     BROWSER_VOICE_MENU,
     DEVICE_LANGS_ALWAYS,
@@ -10,6 +12,8 @@ from piper_voices import (
     _voice_cache,
     clear_piper_runtime_cache,
     default_piper_voice_id,
+    get_piper_voice,
+    iter_tts_stream_events,
     iter_warmup_piper_voice,
     list_browser_voice_menu,
     list_piper_voice_menu,
@@ -75,11 +79,24 @@ class PiperVoiceCatalogTests(unittest.TestCase):
     def test_synthesize_dot_returns_none(self):
         if not voice_files_present("en_US-hfc_female-medium"):
             self.skipTest("English Piper model not installed")
-        from piper_voices import get_piper_voice
 
         voice = get_piper_voice(default_piper_voice_id())
         self.assertIsNone(synthesize_text_to_wav(voice, "."))
         self.assertTrue(synthesize_text_to_wav(voice, "Hi"))
+
+    def test_iter_tts_stream_events_yields_pcm(self):
+        if not voice_files_present("en_US-hfc_female-medium"):
+            self.skipTest("English Piper model not installed")
+        voice = get_piper_voice(default_piper_voice_id())
+        events = [
+            json.loads(line)
+            for line in iter_tts_stream_events(voice, "Hi!", voice_id=default_piper_voice_id())
+            if line.strip()
+        ]
+        types = [event.get("type") for event in events]
+        self.assertEqual(types[0], "meta")
+        self.assertIn("pcm", types)
+        self.assertEqual(types[-1], "done")
 
 
 class PiperVoicesStatusRouteTests(unittest.TestCase):

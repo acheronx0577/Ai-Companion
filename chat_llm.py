@@ -1,7 +1,9 @@
 """Optional Groq chat backend (free tier, no credit card)."""
 
+import json
 import os
 from collections import defaultdict
+from collections.abc import Iterator
 from threading import Lock
 
 import httpx
@@ -127,3 +129,60 @@ async def chat_with_groq(
     _append_history(session_id, "user", user_message)
     _append_history(session_id, "assistant", reply)
     return reply
+
+
+def iter_chat_with_groq(
+    session_id: str, user_message: str, language: str = "en"
+) -> Iterator[str]:
+    """Stream Groq reply tokens; updates history when the stream completes."""
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not set")
+
+    payload = {
+        "model": groq_model(),
+        "messages": _messages_for_session(session_id, user_message, language),
+        "temperature": 0.8,
+        "max_tokens": 300,
+        "stream": True,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    parts: list[str] = []
+    with httpx.Client(timeout=60.0) as client:
+        with client.stream("POST", GROQ_CHAT_URL, json=payload, headers=headers) as response:
+            if response.status_code == 429:
+                raise RuntimeError(
+                    "Groq rate limit reached. Wait a minute and try again, or check console.groq.com."
+                )
+            if response.status_code >= 400:
+                detail = response.read().decode("utf-8", errors="replace")[:400]
+                raise RuntimeError(f"Groq API error ({response.status_code}): {detail}")
+
+            for line in response.iter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data or data == "[DONE]":
+                    continue
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                choices = event.get("choices") or []
+                if not choices:
+                    continue
+                delta = (choices[0].get("delta") or {}).get("content") or ""
+                if not delta:
+                    continue
+                parts.append(delta)
+                yield delta
+
+    reply = "".join(parts).strip()
+    if not reply:
+        raise RuntimeError("Groq returned an empty message")
+    _append_history(session_id, "user", user_message)
+    _append_history(session_id, "assistant", reply)

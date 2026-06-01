@@ -248,15 +248,25 @@
 
             <aside class="companion-panel" aria-label="Companion character">
                 <p class="label companion-panel-label">WakuWaku</p>
-                <div class="character-viewer">
+                <div id="character-viewer" class="character-viewer">
                     <img
-                        id="character-image"
+                        id="character-mouth-closed"
+                        class="character-mouth character-mouth--closed"
                         src="/static/images/char-mouth-closed.png?v={{ asset_version }}"
                         alt="WakuWaku"
                         width="480"
                         height="640"
                         decoding="async"
                         fetchpriority="high">
+                    <img
+                        id="character-mouth-open"
+                        class="character-mouth character-mouth--open"
+                        src="/static/images/char-mouth-open.png?v={{ asset_version }}"
+                        alt=""
+                        width="480"
+                        height="640"
+                        decoding="async"
+                        aria-hidden="true">
                 </div>
             </aside>
         </main>
