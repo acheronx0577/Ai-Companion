@@ -1,20 +1,28 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const appShell = document.querySelector('.app-shell');
     const textInput = document.getElementById('text-input');
     const sendButton = document.getElementById('send-button');
+    const stopButton = document.getElementById('stop-button');
+    const sendButtonWrap = document.querySelector('.send-button-wrap');
     const characterImage = document.getElementById('character-image');
     const voiceSelect = document.getElementById('voice-select');
     const messageList = document.getElementById('message-list');
     const conversationList = document.getElementById('conversation-list');
     const newChatButton = document.getElementById('new-chat-button');
     const deleteAllChatsButton = document.getElementById('delete-all-chats-button');
-    const changeProfileButton = document.getElementById('change-profile-button');
-    const profileUploadInput = document.getElementById('profile-upload-input');
     const profilePreview = document.getElementById('profile-preview');
+    const authGuest = document.getElementById('auth-guest');
+    const authUser = document.getElementById('auth-user');
+    const googleSignInButton = document.getElementById('google-sign-in-button');
+    const authConfigWarning = document.getElementById('auth-config-warning');
+    const logoutButton = document.getElementById('logout-button');
+    const userDisplayName = document.getElementById('user-display-name');
+    const userDisplayEmail = document.getElementById('user-display-email');
     const toggleHistoryButton = document.getElementById('toggle-history-button');
     const mobileHistoryToggle = document.getElementById('mobile-history-toggle');
     const historyBackdrop = document.getElementById('history-backdrop');
     const conversationTitle = document.getElementById('conversation-title');
+    const usageMeter = document.getElementById('usage-meter');
 
     const imageCacheBust = Math.random().toString(36).substring(2, 10);
     const openMouthImg = `/static/images/char-mouth-open.png?v=${imageCacheBust}`;
@@ -30,6 +38,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let voices = [];
     let lipSyncInterval;
+    let activeTtsAudio = null;
+    let activeSpeechId = 0;
+    let speechResumeTimer = null;
+    let activeChatAbortController = null;
+    let chatRequestInFlight = false;
+    let speechInProgress = false;
     let lastVoiceSignature = '';
     const femaleNameHints = [
         'female', 'woman', 'girl', 'zira', 'hazel', 'aria', 'jenny', 'sara', 'samantha', 'alloy', 'nova',
@@ -41,33 +55,420 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeConversationId = null;
     let activeMenuConversationId = null;
     const sidebarStorageKey = 'wakuwaku.sidebarCollapsed';
-    const userAvatarStorageKey = 'wakuwaku.userAvatar';
+    const chatHistoryStorageKey = 'wakuwaku.chatHistory';
+    let authState = {
+        authenticated: false,
+        oauthConfigured: false,
+        user: null
+    };
+    const DAILY_MESSAGE_LIMIT = 10;
+    let usageState = {
+        limit: DAILY_MESSAGE_LIMIT,
+        used: 0,
+        remaining: DAILY_MESSAGE_LIMIT,
+        allowed: true,
+        canSend: true,
+        rate: null
+    };
+    let rateLimitUntil = 0;
+    let rateLimitCooldownTimer = null;
+    let rateLimitUiTimer = null;
+
+    function formatConversationMeta(createdAt) {
+        const date = new Date(createdAt);
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
+        return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    function syncHistoryBackdrop() {
+        if (!historyBackdrop || !appShell) {
+            return;
+        }
+        const isMobile = window.innerWidth <= 1024;
+        const isOpen = isMobile && !appShell.classList.contains('sidebar-collapsed');
+        historyBackdrop.hidden = !isOpen;
+        historyBackdrop.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+        if ('inert' in historyBackdrop) {
+            historyBackdrop.inert = !isOpen;
+        }
+    }
+
+    function getTrialLimitMessage() {
+        const limit = usageState.limit || DAILY_MESSAGE_LIMIT;
+        return (
+            `Meow... you've used all ${limit} trial messages for today! `
+            + 'Your chat limit resets tomorrow — please come back then and try again. '
+            + 'See you soon!'
+        );
+    }
+
+    function scheduleRateLimitCooldownRefresh() {
+        if (rateLimitCooldownTimer) {
+            clearTimeout(rateLimitCooldownTimer);
+            rateLimitCooldownTimer = null;
+        }
+        if (rateLimitUiTimer) {
+            clearInterval(rateLimitUiTimer);
+            rateLimitUiTimer = null;
+        }
+
+        const waitMs = rateLimitUntil - Date.now();
+        if (waitMs <= 0) {
+            return;
+        }
+
+        rateLimitUiTimer = setInterval(() => {
+            if (Date.now() >= rateLimitUntil) {
+                clearInterval(rateLimitUiTimer);
+                rateLimitUiTimer = null;
+                refreshUsageStatus();
+                return;
+            }
+            updateUsageLimitUi();
+        }, 1000);
+
+        rateLimitCooldownTimer = setTimeout(() => {
+            rateLimitCooldownTimer = null;
+            if (rateLimitUiTimer) {
+                clearInterval(rateLimitUiTimer);
+                rateLimitUiTimer = null;
+            }
+            refreshUsageStatus();
+        }, waitMs + 100);
+    }
+
+    function applyUsageState(next) {
+        if (!next) {
+            return;
+        }
+        const rate = next.rate && typeof next.rate === 'object' ? next.rate : null;
+        usageState = {
+            limit: Number(next.limit) || DAILY_MESSAGE_LIMIT,
+            used: Math.max(0, Number(next.used) || 0),
+            remaining: Math.max(0, Number(next.remaining) || 0),
+            allowed: Boolean(next.allowed),
+            rate,
+            canSend: next.canSend !== undefined
+                ? Boolean(next.canSend)
+                : Boolean(next.allowed) && (!rate || rate.allowed)
+        };
+
+        if (rate && !rate.allowed) {
+            const retrySeconds = Math.max(1, Number(rate.retryAfterSeconds) || 1);
+            rateLimitUntil = Date.now() + (retrySeconds * 1000);
+            scheduleRateLimitCooldownRefresh();
+        } else if (usageState.canSend) {
+            rateLimitUntil = 0;
+        }
+
+        updateUsageLimitUi();
+    }
+
+    async function refreshUsageStatus() {
+        try {
+            const response = await fetch('/usage/status');
+            if (!response.ok) {
+                return;
+            }
+            const data = await readJsonResponse(response);
+            applyUsageState(data);
+        } catch (_error) {
+            // keep last known usage state
+        }
+    }
 
     const floatingMenu = document.createElement('div');
     floatingMenu.className = 'floating-conversation-menu';
-    floatingMenu.innerHTML = `
-        <button type="button" data-action="rename">Rename</button>
-        <button type="button" data-action="delete">Delete</button>
-    `;
+    floatingMenu.setAttribute('role', 'menu');
+    floatingMenu.setAttribute('aria-label', 'Conversation options');
+    const renameMenuButton = document.createElement('button');
+    renameMenuButton.type = 'button';
+    renameMenuButton.dataset.action = 'rename';
+    renameMenuButton.setAttribute('role', 'menuitem');
+    renameMenuButton.textContent = 'Rename';
+    const deleteMenuButton = document.createElement('button');
+    deleteMenuButton.type = 'button';
+    deleteMenuButton.dataset.action = 'delete';
+    deleteMenuButton.setAttribute('role', 'menuitem');
+    deleteMenuButton.textContent = 'Delete';
+    floatingMenu.append(renameMenuButton, deleteMenuButton);
     document.body.appendChild(floatingMenu);
 
-    function setSidebarCollapsed(collapsed) {
-        if (!appShell || !toggleHistoryButton) {
+    function getUserAvatarSrc() {
+        if (!authState.authenticated) {
+            return null;
+        }
+        return defaultUserAvatar || builtInUserAvatar;
+    }
+
+    function renderAuthUi() {
+        const loggedIn = Boolean(authState.authenticated && authState.user);
+
+        if (authGuest) {
+            authGuest.hidden = loggedIn;
+        }
+        if (authUser) {
+            authUser.hidden = !loggedIn;
+        }
+
+        if (googleSignInButton) {
+            const disabled = !authState.oauthConfigured;
+            googleSignInButton.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+            if (disabled) {
+                googleSignInButton.removeAttribute('href');
+            } else {
+                googleSignInButton.setAttribute('href', '/auth/google');
+            }
+        }
+        if (authConfigWarning) {
+            authConfigWarning.hidden = authState.oauthConfigured;
+        }
+
+        clearGoogleSignInSpotlight();
+
+        if (loggedIn) {
+            const user = authState.user;
+            if (userDisplayName) {
+                userDisplayName.textContent = user.name || 'Google user';
+            }
+            if (userDisplayEmail) {
+                userDisplayEmail.textContent = user.email || '';
+            }
+            if (user.picture) {
+                defaultUserAvatar = user.picture;
+            } else {
+                defaultUserAvatar = builtInUserAvatar;
+            }
+            if (profilePreview) {
+                profilePreview.hidden = false;
+                profilePreview.src = defaultUserAvatar;
+            }
+        } else if (profilePreview) {
+            profilePreview.hidden = true;
+            profilePreview.removeAttribute('src');
+        }
+
+        if (appShell) {
+            appShell.classList.toggle('requires-auth', !loggedIn);
+        }
+        updateChatAccessForAuth();
+        if (loggedIn) {
+            ensureChatReadyAfterLogin();
+        }
+        renderMessages();
+    }
+
+    async function refreshAuthState() {
+        try {
+            const response = await fetch('/auth/me');
+            if (!response.ok) {
+                return;
+            }
+            const data = await readJsonResponse(response);
+            authState = {
+                authenticated: Boolean(data.authenticated),
+                oauthConfigured: Boolean(data.oauthConfigured),
+                user: data.user || null
+            };
+        } catch (_error) {
+            // keep last known auth state
+        }
+        renderAuthUi();
+    }
+
+    function updateChatAccessForAuth() {
+        const loggedIn = authState.authenticated;
+
+        if (newChatButton) {
+            newChatButton.disabled = !loggedIn;
+            newChatButton.setAttribute('aria-disabled', loggedIn ? 'false' : 'true');
+        }
+
+        if (conversationTitle) {
+            conversationTitle.contentEditable = loggedIn ? 'true' : 'false';
+        }
+
+        if (!loggedIn) {
+            textInput.disabled = true;
+            sendButton.disabled = true;
+            sendButton.setAttribute('aria-disabled', 'true');
+            textInput.placeholder = 'Sign in with Google in the sidebar to start chatting.';
+            if (usageMeter) {
+                usageMeter.textContent = 'Sign in to chat and use your daily trial messages.';
+            }
             return;
         }
-        appShell.classList.toggle('sidebar-collapsed', collapsed);
-        toggleHistoryButton.textContent = collapsed ? '⟩' : '⟨';
+
+        updateUsageLimitUi();
+    }
+
+    function ensureChatReadyAfterLogin() {
+        if (!authState.authenticated) {
+            return;
+        }
+        if (getActiveConversation()) {
+            return;
+        }
+        if (conversations.length > 0) {
+            activeConversationId = conversations[0].id;
+            renderConversationList();
+            renderMessages();
+            saveChatHistory();
+            return;
+        }
+        createConversationAndActivate();
+    }
+
+    function canSendUserMessage() {
+        if (!authState.authenticated) {
+            return false;
+        }
+        if (!usageState.allowed) {
+            return false;
+        }
+        if (Date.now() < rateLimitUntil) {
+            return false;
+        }
+        return usageState.canSend !== false;
+    }
+
+    function updateUsageLimitUi() {
+        if (!authState.authenticated) {
+            updateChatAccessForAuth();
+            return;
+        }
+
+        const limit = usageState.limit || DAILY_MESSAGE_LIMIT;
+        const remaining = usageState.remaining;
+        const atDailyLimit = !usageState.allowed;
+        const rateLimitedNow = Date.now() < rateLimitUntil;
+        const waitSeconds = rateLimitedNow
+            ? Math.max(1, Math.ceil((rateLimitUntil - Date.now()) / 1000))
+            : 0;
+        const sendBlocked = atDailyLimit || rateLimitedNow || !usageState.canSend;
+
+        if (usageMeter) {
+            if (atDailyLimit) {
+                usageMeter.textContent = `Trial: 0 of ${limit} messages left today`;
+            } else if (rateLimitedNow) {
+                usageMeter.textContent = `Slow down: wait ${waitSeconds}s before sending again`;
+            } else {
+                usageMeter.textContent = `Trial: ${remaining} of ${limit} messages left today`;
+            }
+        }
+
+        textInput.disabled = atDailyLimit;
+        sendButton.disabled = sendBlocked;
+        sendButton.setAttribute('aria-disabled', sendBlocked ? 'true' : 'false');
+
+        if (atDailyLimit) {
+            textInput.placeholder = 'Daily trial limit reached. Come back tomorrow!';
+        } else if (rateLimitedNow) {
+            textInput.placeholder = `Please wait ${waitSeconds}s before sending another message.`;
+        } else {
+            textInput.placeholder = 'Ask me anything...';
+        }
+    }
+
+    function setMessageListBusy(isBusy) {
+        messageList.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+    }
+
+    async function readJsonResponse(response) {
+        const text = await response.text();
+        if (!text) {
+            return {};
+        }
+
+        try {
+            return JSON.parse(text);
+        } catch (_error) {
+            const trimmed = text.trim().toLowerCase();
+            if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html')) {
+                throw new Error(
+                    `Server error (${response.status}). Start the app with Flask at http://127.0.0.1:5000 — do not open the HTML file directly.`
+                );
+            }
+            throw new Error(`Invalid server response (${response.status}).`);
+        }
+    }
+
+    let sidebarCloseTimer = null;
+    const sidebarCloseFadeMs = 140;
+
+    function isDesktopSidebarLayout() {
+        return window.innerWidth > 1024;
+    }
+
+    function prefersReducedMotion() {
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+
+    function updateSidebarToggleUi(collapsed) {
+        toggleHistoryButton.classList.toggle('is-collapsed', collapsed);
         toggleHistoryButton.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
         toggleHistoryButton.setAttribute('title', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
         if (mobileHistoryToggle) {
             mobileHistoryToggle.setAttribute('aria-label', collapsed ? 'Open sidebar' : 'Close sidebar');
             mobileHistoryToggle.setAttribute('title', collapsed ? 'Open sidebar' : 'Close sidebar');
         }
+    }
+
+    function setSidebarCollapsed(collapsed) {
+        if (!appShell || !toggleHistoryButton) {
+            return;
+        }
+
+        if (sidebarCloseTimer) {
+            window.clearTimeout(sidebarCloseTimer);
+            sidebarCloseTimer = null;
+        }
+
+        appShell.classList.remove('sidebar-is-closing');
+
+        if (!collapsed) {
+            appShell.classList.toggle('sidebar-collapsed', false);
+            updateSidebarToggleUi(false);
+            try {
+                window.localStorage.setItem(sidebarStorageKey, '0');
+            } catch (_error) {
+                // ignore storage failures
+            }
+            syncHistoryBackdrop();
+            return;
+        }
+
+        const alreadyCollapsed = appShell.classList.contains('sidebar-collapsed');
+        const isClosing = appShell.classList.contains('sidebar-is-closing');
+        if (isDesktopSidebarLayout() && !alreadyCollapsed && !isClosing) {
+            updateSidebarToggleUi(true);
+            appShell.classList.add('sidebar-is-closing');
+            const fadeMs = prefersReducedMotion() ? 0 : sidebarCloseFadeMs;
+            sidebarCloseTimer = window.setTimeout(() => {
+                sidebarCloseTimer = null;
+                appShell.classList.remove('sidebar-is-closing');
+                appShell.classList.add('sidebar-collapsed');
+                try {
+                    window.localStorage.setItem(sidebarStorageKey, '1');
+                } catch (_error) {
+                    // ignore storage failures
+                }
+                syncHistoryBackdrop();
+            }, fadeMs);
+            syncHistoryBackdrop();
+            return;
+        }
+
+        appShell.classList.toggle('sidebar-collapsed', true);
+        updateSidebarToggleUi(true);
         try {
-            window.localStorage.setItem(sidebarStorageKey, collapsed ? '1' : '0');
+            window.localStorage.setItem(sidebarStorageKey, '1');
         } catch (_error) {
             // ignore storage failures
         }
+        syncHistoryBackdrop();
     }
 
     function newConversation() {
@@ -79,6 +480,95 @@ document.addEventListener('DOMContentLoaded', () => {
             manualTitle: false,
             messages: []
         };
+    }
+
+    function normalizeStoredMessage(entry) {
+        if (!entry || typeof entry.text !== 'string') {
+            return null;
+        }
+        const role = entry.role === 'user' ? 'user' : 'ai';
+        return {
+            role,
+            text: entry.text,
+            at: typeof entry.at === 'number' ? entry.at : Date.now()
+        };
+    }
+
+    function normalizeStoredConversation(entry) {
+        if (!entry || typeof entry.id !== 'string') {
+            return null;
+        }
+        const messages = Array.isArray(entry.messages)
+            ? entry.messages.map(normalizeStoredMessage).filter(Boolean)
+            : [];
+        return {
+            id: entry.id,
+            title: typeof entry.title === 'string' && entry.title.trim()
+                ? entry.title.trim()
+                : 'Conversation',
+            createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : Date.now(),
+            manualTitle: Boolean(entry.manualTitle),
+            messages
+        };
+    }
+
+    function saveChatHistory() {
+        try {
+            const payload = {
+                version: 1,
+                activeConversationId,
+                conversations: conversations.map((conversation) => ({
+                    id: conversation.id,
+                    title: conversation.title,
+                    createdAt: conversation.createdAt,
+                    manualTitle: conversation.manualTitle,
+                    messages: conversation.messages.map((message) => ({
+                        role: message.role,
+                        text: message.text,
+                        at: message.at
+                    }))
+                }))
+            };
+            window.localStorage.setItem(chatHistoryStorageKey, JSON.stringify(payload));
+        } catch (_error) {
+            // ignore storage failures (e.g. private mode or quota)
+        }
+    }
+
+    function loadChatHistory() {
+        try {
+            const raw = window.localStorage.getItem(chatHistoryStorageKey);
+            if (!raw) {
+                return false;
+            }
+
+            const data = JSON.parse(raw);
+            if (!data || !Array.isArray(data.conversations)) {
+                return false;
+            }
+
+            const loaded = data.conversations
+                .map(normalizeStoredConversation)
+                .filter(Boolean);
+
+            conversations.length = 0;
+            conversations.push(...loaded);
+
+            if (
+                data.activeConversationId
+                && conversations.some((conversation) => conversation.id === data.activeConversationId)
+            ) {
+                activeConversationId = data.activeConversationId;
+            } else if (conversations.length) {
+                activeConversationId = conversations[0].id;
+            } else {
+                activeConversationId = null;
+            }
+
+            return conversations.length > 0;
+        } catch (_error) {
+            return false;
+        }
     }
 
     function getActiveConversation() {
@@ -103,6 +593,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renameConversation(conversationId) {
+        if (!authState.authenticated) {
+            return;
+        }
         const conversation = conversations.find((item) => item.id === conversationId);
         if (!conversation) {
             return;
@@ -115,6 +608,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function deleteConversation(conversationId) {
+        if (!authState.authenticated) {
+            return;
+        }
         const conversation = conversations.find((item) => item.id === conversationId);
         if (!conversation) {
             return;
@@ -128,6 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
             activeConversationId = null;
             renderConversationList();
             renderMessages();
+            saveChatHistory();
             return;
         }
 
@@ -136,9 +633,13 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMessages();
         }
         renderConversationList();
+        saveChatHistory();
     }
 
     function openConversationMenu(row, menuButton, conversationId) {
+        if (!authState.authenticated) {
+            return;
+        }
         const wasOpen = row.classList.contains('menu-open');
         closeAllConversationMenus();
         if (wasOpen) {
@@ -171,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderConversationList() {
-        conversationList.innerHTML = '';
+        const fragment = document.createDocumentFragment();
         conversations.forEach((conversation) => {
             const row = document.createElement('div');
             row.className = `conversation-item${conversation.id === activeConversationId ? ' active' : ''}`;
@@ -179,14 +680,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectButton = document.createElement('button');
             selectButton.type = 'button';
             selectButton.className = 'conversation-main';
-            selectButton.innerHTML = `
-                <span>${conversation.title}</span>
-                <span class="conversation-meta">${new Date(conversation.createdAt).toLocaleDateString()} ${new Date(conversation.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            `;
+            const titleSpan = document.createElement('span');
+            titleSpan.textContent = conversation.title;
+            const metaSpan = document.createElement('span');
+            metaSpan.className = 'conversation-meta';
+            metaSpan.textContent = formatConversationMeta(conversation.createdAt);
+            selectButton.append(titleSpan, metaSpan);
             selectButton.addEventListener('click', () => {
                 activeConversationId = conversation.id;
                 renderConversationList();
                 renderMessages();
+                saveChatHistory();
             });
 
             const menuButton = document.createElement('button');
@@ -194,20 +698,126 @@ document.addEventListener('DOMContentLoaded', () => {
             menuButton.className = 'conversation-menu-button';
             menuButton.setAttribute('aria-label', 'Conversation options');
             menuButton.textContent = '⋯';
+            menuButton.disabled = !authState.authenticated;
+            menuButton.hidden = !authState.authenticated;
 
             menuButton.addEventListener('click', (event) => {
                 event.stopPropagation();
                 openConversationMenu(row, menuButton, conversation.id);
             });
 
-            row.appendChild(selectButton);
-            row.appendChild(menuButton);
-            conversationList.appendChild(row);
+            row.append(selectButton, menuButton);
+            fragment.appendChild(row);
         });
+        conversationList.replaceChildren(fragment);
     }
 
     function isNearBottom(element, threshold = 80) {
         return (element.scrollHeight - element.scrollTop - element.clientHeight) <= threshold;
+    }
+
+    let googleSignInSpotlightTimer = null;
+
+    function clearGoogleSignInSpotlight() {
+        if (googleSignInSpotlightTimer) {
+            window.clearTimeout(googleSignInSpotlightTimer);
+            googleSignInSpotlightTimer = null;
+        }
+        googleSignInButton?.classList.remove('is-spotlight');
+        document.querySelector('.history-footer')?.classList.remove('history-footer--glow');
+    }
+
+    function highlightGoogleSignInButton() {
+        if (!googleSignInButton || authState.authenticated) {
+            return;
+        }
+        clearGoogleSignInSpotlight();
+        googleSignInButton.classList.add('is-spotlight');
+        document.querySelector('.history-footer')?.classList.add('history-footer--glow');
+
+        if (googleSignInButton.getAttribute('aria-disabled') !== 'true') {
+            googleSignInButton.focus({ preventScroll: true });
+        }
+
+        googleSignInSpotlightTimer = window.setTimeout(() => {
+            clearGoogleSignInSpotlight();
+        }, 3200);
+    }
+
+    function openSidebarForSignIn() {
+        if (authState.authenticated || !appShell) {
+            return;
+        }
+
+        const wasCollapsed = appShell.classList.contains('sidebar-collapsed');
+        setSidebarCollapsed(false);
+
+        let delayMs = 80;
+        if (wasCollapsed) {
+            if (isDesktopSidebarLayout()) {
+                delayMs = prefersReducedMotion() ? 0 : 340;
+            } else {
+                delayMs = prefersReducedMotion() ? 0 : 200;
+            }
+        }
+
+        window.setTimeout(highlightGoogleSignInButton, delayMs);
+    }
+
+    function createMessageEmptyState({ guest = false, title, body }) {
+        const empty = document.createElement('div');
+        empty.className = guest ? 'message-empty message-empty--guest' : 'message-empty';
+        const bodyEl = document.createElement('p');
+        bodyEl.className = 'message-empty-body';
+        bodyEl.textContent = body;
+
+        if (guest) {
+            const titleButton = document.createElement('button');
+            titleButton.type = 'button';
+            titleButton.className = 'message-empty-title message-empty-cta';
+            titleButton.textContent = title;
+            titleButton.addEventListener('click', openSidebarForSignIn);
+            empty.append(titleButton, bodyEl);
+            return empty;
+        }
+
+        const titleEl = document.createElement('p');
+        titleEl.className = 'message-empty-title';
+        titleEl.textContent = title;
+        empty.append(titleEl, bodyEl);
+        return empty;
+    }
+
+    function formatMessageTime(timestamp) {
+        const date = new Date(timestamp);
+        if (Number.isNaN(date.getTime())) {
+            return '';
+        }
+
+        const now = new Date();
+        const timeLabel = date.toLocaleTimeString(undefined, {
+            hour: 'numeric',
+            minute: '2-digit'
+        });
+
+        if (date.toDateString() === now.toDateString()) {
+            return timeLabel;
+        }
+
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        if (date.toDateString() === yesterday.toDateString()) {
+            return `Yesterday ${timeLabel}`;
+        }
+
+        const dateLabel = date.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric'
+        });
+        const yearSuffix = date.getFullYear() !== now.getFullYear()
+            ? `, ${date.getFullYear()}`
+            : '';
+        return `${dateLabel}${yearSuffix} ${timeLabel}`;
     }
 
     function renderMessages(options = {}) {
@@ -217,21 +827,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const previousScrollHeight = messageList.scrollHeight;
         const shouldStickToBottom = forceScrollBottom || isNearBottom(messageList);
 
-        messageList.innerHTML = '';
+        const fragment = document.createDocumentFragment();
         if (!conversation) {
-            const empty = document.createElement('div');
-            empty.className = 'message-empty';
-            empty.textContent = 'No conversation selected. Click "New Chat" to start.';
-            messageList.appendChild(empty);
+            fragment.appendChild(
+                authState.authenticated
+                    ? createMessageEmptyState({
+                        title: 'No conversation yet',
+                        body: 'Click New Chat in the sidebar to begin.'
+                    })
+                    : createMessageEmptyState({
+                        guest: true,
+                        title: 'Sign in to chat',
+                        body: 'Use Google sign-in in the sidebar Account section to talk with WakuWaku.'
+                    })
+            );
+            messageList.replaceChildren(fragment);
             conversationTitle.textContent = 'No Conversation';
             return;
         }
 
         if (!conversation.messages.length) {
-            const empty = document.createElement('div');
-            empty.className = 'message-empty';
-            empty.textContent = 'Start chatting. Your messages and replies will appear here.';
-            messageList.appendChild(empty);
+            fragment.appendChild(
+                authState.authenticated
+                    ? createMessageEmptyState({
+                        title: 'Say hello',
+                        body: 'Your messages and WakuWaku\'s replies will appear here.'
+                    })
+                    : createMessageEmptyState({
+                        guest: true,
+                        title: 'Sign in to chat',
+                        body: 'Use Google sign-in in the sidebar Account section to talk with WakuWaku.'
+                    })
+            );
+            messageList.replaceChildren(fragment);
             conversationTitle.textContent = conversation.title;
             return;
         }
@@ -253,27 +881,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 avatarImage.alt = 'WakuWaku';
                 avatar.appendChild(avatarImage);
             } else {
-                const avatarImage = document.createElement('img');
-                avatarImage.className = 'message-avatar-image';
-                avatarImage.src = defaultUserAvatar;
-                avatarImage.alt = 'You';
-                avatar.appendChild(avatarImage);
+                const userAvatarSrc = getUserAvatarSrc();
+                if (userAvatarSrc) {
+                    const avatarImage = document.createElement('img');
+                    avatarImage.className = 'message-avatar-image';
+                    avatarImage.src = userAvatarSrc;
+                    avatarImage.alt = 'You';
+                    avatar.appendChild(avatarImage);
+                } else {
+                    avatar.classList.add('message-avatar--placeholder');
+                    avatar.textContent = 'Y';
+                    avatar.setAttribute('aria-label', 'You');
+                }
             }
 
             const author = document.createElement('span');
             author.className = 'message-author';
             author.textContent = entry.role === 'user' ? 'You' : 'WakuWaku';
 
+            const timestamp = document.createElement('time');
+            timestamp.className = 'message-time';
+            const sentAt = typeof entry.at === 'number' ? entry.at : Date.now();
+            timestamp.dateTime = new Date(sentAt).toISOString();
+            timestamp.textContent = formatMessageTime(sentAt);
+
+            const meta = document.createElement('div');
+            meta.className = 'message-meta';
+            meta.appendChild(author);
+            meta.appendChild(timestamp);
+
             const content = document.createElement('div');
             content.className = 'message-content';
             content.textContent = entry.text;
 
             header.appendChild(avatar);
-            header.appendChild(author);
-            row.appendChild(header);
-            row.appendChild(content);
-            messageList.appendChild(row);
+            header.appendChild(meta);
+            row.append(header, content);
+            fragment.appendChild(row);
         });
+
+        messageList.replaceChildren(fragment);
 
         if (shouldStickToBottom) {
             messageList.scrollTop = messageList.scrollHeight;
@@ -287,6 +934,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function appendMessage(role, text) {
+        if (role === 'user' && !authState.authenticated) {
+            return;
+        }
         const conversation = getActiveConversation();
         if (!conversation) {
             return;
@@ -297,9 +947,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderConversationList();
         renderMessages({ forceScrollBottom: role === 'user' });
+        saveChatHistory();
     }
 
     function commitConversationTitle() {
+        if (!authState.authenticated) {
+            return;
+        }
         const conversation = getActiveConversation();
         if (!conversation) {
             return;
@@ -309,6 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
         conversation.manualTitle = true;
         conversationTitle.textContent = conversation.title;
         renderConversationList();
+        saveChatHistory();
     }
 
     function setVoiceSelectUnavailable(message) {
@@ -370,31 +1025,67 @@ document.addEventListener('DOMContentLoaded', () => {
         return selected.sort((a, b) => a.lang.localeCompare(b.lang));
     }
 
-    function populateVoiceList(force = false) {
-        if (!('speechSynthesis' in window)) {
-            voices = [];
-            setVoiceSelectUnavailable('Speech not supported');
-            return;
+    function isPiperVoiceSelected() {
+        const selected = voiceSelect.selectedOptions[0];
+        return selected?.getAttribute('data-engine') === 'piper';
+    }
+
+    function getSelectedSpeechLanguage() {
+        if (isPiperVoiceSelected()) {
+            return 'en';
+        }
+        const selected = voiceSelect.selectedOptions[0];
+        const lang = (selected?.getAttribute('data-lang') || '').toLowerCase();
+        return lang.startsWith('ja') ? 'ja' : 'en';
+    }
+
+    async function populateVoiceList(force = false) {
+        let piperAvailable = false;
+        try {
+            const statusResponse = await fetch('/voices/status');
+            if (statusResponse.ok) {
+                const statusData = await readJsonResponse(statusResponse);
+                piperAvailable = Boolean(statusData.piperAvailable);
+            }
+        } catch (_error) {
+            piperAvailable = false;
         }
 
-        const allVoices = speechSynthesis.getVoices();
-        const nextSignature = buildVoiceSignature(allVoices);
+        const speechSupported = 'speechSynthesis' in window;
+        const allVoices = speechSupported ? speechSynthesis.getVoices() : [];
+        const nextSignature = `${piperAvailable ? 'piper|' : ''}${buildVoiceSignature(allVoices)}`;
         if (!force && nextSignature === lastVoiceSignature) {
             return;
         }
         lastVoiceSignature = nextSignature;
 
+        if (!speechSupported && !piperAvailable) {
+            voices = [];
+            setVoiceSelectUnavailable('Speech not supported');
+            return;
+        }
+
         voices = pickOneVoicePerLanguage(allVoices);
         voiceSelect.innerHTML = '';
         voiceSelect.disabled = false;
 
-        if (!voices.length) {
+        if (piperAvailable) {
+            const piperOption = document.createElement('option');
+            piperOption.value = 'piper:en_US-hfc_female-medium';
+            piperOption.textContent = 'Piper Natural Female (en-US)';
+            piperOption.setAttribute('data-engine', 'piper');
+            piperOption.setAttribute('data-name', 'piper:en_US-hfc_female-medium');
+            voiceSelect.appendChild(piperOption);
+        }
+
+        if (!voices.length && !piperAvailable) {
             setVoiceSelectUnavailable('Loading voices...');
             return;
         }
 
         let usVoiceIndex = -1;
         let japaneseVoiceIndex = -1;
+        const piperOffset = piperAvailable ? 1 : 0;
 
         voices.forEach((voice, i) => {
             const option = document.createElement('option');
@@ -412,56 +1103,313 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        if (japaneseVoiceIndex !== -1) {
-            voiceSelect.selectedIndex = japaneseVoiceIndex;
+        if (piperAvailable) {
+            voiceSelect.selectedIndex = 0;
+        } else if (japaneseVoiceIndex !== -1) {
+            voiceSelect.selectedIndex = japaneseVoiceIndex + piperOffset;
         } else if (usVoiceIndex !== -1) {
-            voiceSelect.selectedIndex = usVoiceIndex;
+            voiceSelect.selectedIndex = usVoiceIndex + piperOffset;
         }
     }
 
-    function speak(text) {
-        if (!('speechSynthesis' in window)) {
-            return;
+    function startLipSync() {
+        clearInterval(lipSyncInterval);
+        let mouthOpen = true;
+        lipSyncInterval = setInterval(() => {
+            characterImage.src = mouthOpen ? openMouthImg : closedMouthImg;
+            mouthOpen = !mouthOpen;
+        }, 150);
+    }
+
+    function stopLipSync() {
+        clearInterval(lipSyncInterval);
+        characterImage.src = closedMouthImg;
+    }
+
+    function isAssistantBusy() {
+        return chatRequestInFlight || speechInProgress;
+    }
+
+    function updateAssistantControls() {
+        const busy = isAssistantBusy();
+        if (sendButtonWrap) {
+            sendButtonWrap.classList.toggle('assistant-active', busy);
         }
+        if (stopButton) {
+            stopButton.hidden = !busy;
+        }
+    }
+
+    function stopAllSpeech() {
+        activeSpeechId += 1;
+        speechInProgress = false;
+        stopLipSync();
+        if ('speechSynthesis' in window && speechSynthesis.speaking) {
+            speechSynthesis.cancel();
+        }
+        if (activeTtsAudio) {
+            activeTtsAudio.pause();
+            activeTtsAudio.currentTime = 0;
+            activeTtsAudio = null;
+        }
+        if (speechResumeTimer) {
+            clearInterval(speechResumeTimer);
+            speechResumeTimer = null;
+        }
+        updateAssistantControls();
+    }
+
+    function stopAssistant() {
+        if (activeChatAbortController) {
+            activeChatAbortController.abort();
+            activeChatAbortController = null;
+        }
+        chatRequestInFlight = false;
+        stopAllSpeech();
+    }
+
+    function splitTextForSpeech(text, maxChunkLength = 180) {
+        const normalized = (text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) {
+            return [];
+        }
+
+        const sentences = normalized
+            .split(/(?<=[。．！？!?…])|(?<=[.!?])\s+/)
+            .map((part) => part.trim())
+            .filter(Boolean);
+
+        const chunks = [];
+        let current = '';
+
+        const pushCurrent = () => {
+            if (current.trim()) {
+                chunks.push(current.trim());
+            }
+            current = '';
+        };
+
+        const sourceParts = sentences.length ? sentences : [normalized];
+        sourceParts.forEach((part) => {
+            if (part.length > maxChunkLength) {
+                pushCurrent();
+                for (let index = 0; index < part.length; index += maxChunkLength) {
+                    chunks.push(part.slice(index, index + maxChunkLength));
+                }
+                return;
+            }
+
+            const candidate = current ? `${current} ${part}` : part;
+            if (candidate.length <= maxChunkLength) {
+                current = candidate;
+                return;
+            }
+
+            pushCurrent();
+            current = part;
+        });
+
+        pushCurrent();
+        return chunks.length ? chunks : [normalized];
+    }
+
+    function getSelectedBrowserVoice() {
+        const selectedOption = voiceSelect.selectedOptions[0];
+        const selectedVoiceName = selectedOption ? selectedOption.getAttribute('data-name') : null;
+        return voices.find((voice) => voice.name === selectedVoiceName) || voices[0] || null;
+    }
+
+    function startSpeechResumeWatch(speechId) {
+        if (speechResumeTimer) {
+            clearInterval(speechResumeTimer);
+        }
+        speechResumeTimer = setInterval(() => {
+            if (speechId !== activeSpeechId) {
+                clearInterval(speechResumeTimer);
+                speechResumeTimer = null;
+                return;
+            }
+            if (!('speechSynthesis' in window)) {
+                return;
+            }
+            if (speechSynthesis.speaking && speechSynthesis.paused) {
+                speechSynthesis.resume();
+            }
+        }, 8000);
+    }
+
+    function speakWithBrowserVoice(text, speechId) {
+        if (!('speechSynthesis' in window)) {
+            return Promise.resolve();
+        }
+
+        const chunks = splitTextForSpeech(text);
+        if (!chunks.length) {
+            return Promise.resolve();
+        }
+
+        const selectedVoice = getSelectedBrowserVoice();
+        let chunkIndex = 0;
+
+        return new Promise((resolve) => {
+            const finish = () => {
+                if (speechResumeTimer) {
+                    clearInterval(speechResumeTimer);
+                    speechResumeTimer = null;
+                }
+                resolve();
+            };
+
+            const speakNextChunk = () => {
+            if (speechId !== activeSpeechId || chunkIndex >= chunks.length) {
+                if (speechId === activeSpeechId) {
+                    stopLipSync();
+                }
+                finish();
+                return;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+            }
+
+            utterance.onstart = () => {
+                if (speechId === activeSpeechId) {
+                    startLipSync();
+                }
+            };
+            utterance.onend = () => {
+                if (speechId !== activeSpeechId) {
+                    return;
+                }
+                chunkIndex += 1;
+                speakNextChunk();
+            };
+            utterance.onerror = () => {
+                if (speechId !== activeSpeechId) {
+                    return;
+                }
+                chunkIndex += 1;
+                speakNextChunk();
+            };
+
+            speechSynthesis.speak(utterance);
+        };
 
         if (speechSynthesis.speaking) {
             speechSynthesis.cancel();
         }
-        clearInterval(lipSyncInterval);
 
-        const utterance = new SpeechSynthesisUtterance(text);
-        const selectedOption = voiceSelect.selectedOptions[0];
-        const selectedVoiceName = selectedOption ? selectedOption.getAttribute('data-name') : null;
-        const selectedVoice = voices.find((voice) => voice.name === selectedVoiceName) || voices[0];
-        if (selectedVoice) {
-            utterance.voice = selectedVoice;
+        startSpeechResumeWatch(speechId);
+        speakNextChunk();
+        });
+    }
+
+    function playAudioBlob(audioBlob, speechId) {
+        return new Promise((resolve) => {
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            activeTtsAudio = audio;
+
+            const cleanup = () => {
+                URL.revokeObjectURL(audioUrl);
+                if (activeTtsAudio === audio) {
+                    activeTtsAudio = null;
+                }
+            };
+
+            audio.addEventListener('play', () => {
+                if (speechId === activeSpeechId) {
+                    startLipSync();
+                }
+            });
+            audio.addEventListener('ended', () => {
+                cleanup();
+                resolve(true);
+            });
+            audio.addEventListener('error', () => {
+                cleanup();
+                resolve(false);
+            });
+
+            audio.play().catch(() => {
+                cleanup();
+                resolve(false);
+            });
+        });
+    }
+
+    async function speakWithPiperVoice(text, speechId) {
+        const chunks = splitTextForSpeech(text, 240);
+        for (const chunk of chunks) {
+            if (speechId !== activeSpeechId) {
+                return false;
+            }
+
+            const ttsResponse = await fetch('/tts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ text: chunk })
+            });
+            if (!ttsResponse.ok) {
+                return false;
+            }
+
+            const played = await playAudioBlob(await ttsResponse.blob(), speechId);
+            if (!played || speechId !== activeSpeechId) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    async function speak(text) {
+        const normalized = (text || '').trim();
+        if (!normalized) {
+            return;
         }
 
-        utterance.onstart = () => {
-            let mouthOpen = true;
-            lipSyncInterval = setInterval(() => {
-                characterImage.src = mouthOpen ? openMouthImg : closedMouthImg;
-                mouthOpen = !mouthOpen;
-            }, 150);
-        };
+        stopAllSpeech();
+        const speechId = activeSpeechId;
+        speechInProgress = true;
+        updateAssistantControls();
 
-        utterance.onend = () => {
-            clearInterval(lipSyncInterval);
-            characterImage.src = closedMouthImg;
-        };
+        try {
+            if (!isPiperVoiceSelected()) {
+                await speakWithBrowserVoice(normalized, speechId);
+                return;
+            }
 
-        utterance.onerror = () => {
-            clearInterval(lipSyncInterval);
-            characterImage.src = closedMouthImg;
-        };
-
-        speechSynthesis.speak(utterance);
+            try {
+                const spokeAll = await speakWithPiperVoice(normalized, speechId);
+                if (!spokeAll && speechId === activeSpeechId) {
+                    await speakWithBrowserVoice(normalized, speechId);
+                }
+            } catch (_error) {
+                if (speechId === activeSpeechId) {
+                    await speakWithBrowserVoice(normalized, speechId);
+                }
+            }
+        } finally {
+            if (speechId === activeSpeechId) {
+                speechInProgress = false;
+                updateAssistantControls();
+            }
+        }
     }
 
     async function handleSendMessage() {
         const message = textInput.value.trim();
         const conversation = getActiveConversation();
-        if (!message || !conversation) {
+        if (!message || !conversation || isAssistantBusy()) {
+            return;
+        }
+
+        if (!canSendUserMessage()) {
+            updateUsageLimitUi();
             return;
         }
 
@@ -469,73 +1417,133 @@ document.addEventListener('DOMContentLoaded', () => {
         textInput.style.height = '50px';
         appendMessage('user', message);
 
+        const abortController = new AbortController();
+        activeChatAbortController = abortController;
+        chatRequestInFlight = true;
+        setMessageListBusy(true);
+        updateAssistantControls();
+
         try {
             const response = await fetch('/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ message, session_id: conversation.id })
+                body: JSON.stringify({
+                    message,
+                    session_id: conversation.id,
+                    language: getSelectedSpeechLanguage()
+                }),
+                signal: abortController.signal
             });
 
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
+            const data = await readJsonResponse(response);
+
+            if (data.usage) {
+                applyUsageState(data.usage);
             }
 
-            const data = await response.json();
+            if (response.status === 401 || data.authRequired) {
+                const authMessage = (data.response || '').trim()
+                    || 'Meow! Please sign in with Google from the sidebar profile section before we can chat.';
+                appendMessage('ai', authMessage);
+                saveChatHistory();
+                await refreshAuthState();
+                return;
+            }
+
+            if (response.status === 429 && data.rateLimited) {
+                if (data.usage) {
+                    applyUsageState(data.usage);
+                }
+                if (data.rateLimit) {
+                    const retrySeconds = Math.max(1, Number(data.rateLimit.retryAfterSeconds) || 1);
+                    rateLimitUntil = Date.now() + (retrySeconds * 1000);
+                    scheduleRateLimitCooldownRefresh();
+                    updateUsageLimitUi();
+                }
+                const rateMessage = (data.response || '').trim()
+                    || 'Meow, you are sending messages too fast! Please wait a moment and try again.';
+                appendMessage('ai', rateMessage);
+                saveChatHistory();
+                await speak(rateMessage);
+                return;
+            }
+
+            if (response.status === 429 || data.limitReached) {
+                const limitMessage = (data.response || '').trim() || getTrialLimitMessage();
+                appendMessage('ai', limitMessage);
+                saveChatHistory();
+                await speak(limitMessage);
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error(data.error || `Request failed (${response.status})`);
+            }
+
             const responseText = (data.response || '').trim() || '(No response returned)';
             appendMessage('ai', responseText);
-            speak(responseText);
+            activeChatAbortController = null;
+            await speak(responseText);
         } catch (error) {
+            if (error.name === 'AbortError') {
+                return;
+            }
             console.error('Error:', error);
-            const errorMessage = 'Sorry, something went wrong. Please try again.';
+            const errorMessage = error.message && error.message !== 'Network response was not ok'
+                ? error.message
+                : 'Sorry, something went wrong. Please try again.';
             appendMessage('ai', errorMessage);
+        } finally {
+            chatRequestInFlight = false;
+            setMessageListBusy(false);
+            if (activeChatAbortController === abortController) {
+                activeChatAbortController = null;
+            }
+            updateAssistantControls();
         }
     }
 
     function createConversationAndActivate() {
+        if (!authState.authenticated) {
+            updateChatAccessForAuth();
+            return;
+        }
         const conversation = newConversation();
         conversations.unshift(conversation);
         activeConversationId = conversation.id;
         renderConversationList();
         renderMessages({ forceScrollBottom: true });
+        saveChatHistory();
     }
 
     sendButton.addEventListener('click', handleSendMessage);
+    if (stopButton) {
+        stopButton.addEventListener('click', stopAssistant);
+    }
     newChatButton.addEventListener('click', createConversationAndActivate);
     deleteAllChatsButton.addEventListener('click', () => {
+        if (!authState.authenticated) {
+            return;
+        }
         conversations.length = 0;
         activeConversationId = null;
         closeAllConversationMenus();
         renderConversationList();
         renderMessages();
+        saveChatHistory();
     });
-    changeProfileButton.addEventListener('click', () => {
-        profileUploadInput.click();
-    });
-    profileUploadInput.addEventListener('change', () => {
-        const file = profileUploadInput.files && profileUploadInput.files[0];
-        if (!file) {
-            return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = typeof reader.result === 'string' ? reader.result : '';
-            if (!result) {
-                return;
-            }
-            defaultUserAvatar = result;
-            profilePreview.src = defaultUserAvatar;
-            renderMessages();
+    if (logoutButton) {
+        logoutButton.addEventListener('click', async () => {
             try {
-                window.localStorage.setItem(userAvatarStorageKey, result);
+                await fetch('/auth/logout', { method: 'POST' });
             } catch (_error) {
-                // ignore storage failures
+                // ignore network failures
             }
-        };
-        reader.readAsDataURL(file);
-        profileUploadInput.value = '';
-    });
+            await refreshAuthState();
+        });
+    }
     toggleHistoryButton.addEventListener('click', () => {
         const collapsed = !appShell.classList.contains('sidebar-collapsed');
         setSidebarCollapsed(collapsed);
@@ -555,6 +1563,10 @@ document.addEventListener('DOMContentLoaded', () => {
     textInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
+            if (isAssistantBusy()) {
+                stopAssistant();
+                return;
+            }
             handleSendMessage();
         }
     });
@@ -572,6 +1584,26 @@ document.addEventListener('DOMContentLoaded', () => {
             closeAllConversationMenus();
         }
     });
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') {
+            return;
+        }
+        closeAllConversationMenus();
+        if (
+            window.innerWidth <= 1024
+            && appShell
+            && !appShell.classList.contains('sidebar-collapsed')
+        ) {
+            setSidebarCollapsed(true);
+        }
+    });
+    if (googleSignInButton) {
+        googleSignInButton.addEventListener('click', (event) => {
+            if (googleSignInButton.getAttribute('aria-disabled') === 'true') {
+                event.preventDefault();
+            }
+        });
+    }
     floatingMenu.addEventListener('click', (event) => {
         event.stopPropagation();
         if (!(event.target instanceof Element)) {
@@ -590,7 +1622,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         closeAllConversationMenus();
     });
-    window.addEventListener('resize', closeAllConversationMenus);
+    window.addEventListener('resize', () => {
+        closeAllConversationMenus();
+        syncHistoryBackdrop();
+    });
     conversationList.addEventListener('scroll', closeAllConversationMenus);
 
     conversationTitle.setAttribute('contenteditable', 'true');
@@ -612,9 +1647,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     conversationTitle.addEventListener('blur', commitConversationTitle);
 
-    populateVoiceList(true);
+    let voicePopulateTimer = null;
+    function scheduleVoiceListPopulate(force = false) {
+        if (voicePopulateTimer) {
+            clearTimeout(voicePopulateTimer);
+        }
+        voicePopulateTimer = setTimeout(() => {
+            voicePopulateTimer = null;
+            populateVoiceList(force);
+        }, 120);
+    }
+
+    scheduleVoiceListPopulate(true);
     if ('speechSynthesis' in window && speechSynthesis.onvoiceschanged !== undefined) {
-        speechSynthesis.onvoiceschanged = () => populateVoiceList(true);
+        speechSynthesis.onvoiceschanged = () => scheduleVoiceListPopulate(true);
     }
 
     let voiceRetryCount = 0;
@@ -626,12 +1672,18 @@ document.addEventListener('DOMContentLoaded', () => {
         voiceRetryCount += 1;
         const availableVoices = speechSynthesis.getVoices();
         if (availableVoices.length > 1 || voiceRetryCount >= 10) {
-            populateVoiceList(true);
+            scheduleVoiceListPopulate(true);
             clearInterval(voiceRetryTimer);
             return;
         }
-        populateVoiceList();
+        scheduleVoiceListPopulate();
     }, 500);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            clearInterval(voiceRetryTimer);
+        }
+    });
 
     try {
         const stored = window.localStorage.getItem(sidebarStorageKey);
@@ -646,15 +1698,28 @@ document.addEventListener('DOMContentLoaded', () => {
         setSidebarCollapsed(window.innerWidth <= 1024);
     }
 
-    try {
-        const storedAvatar = window.localStorage.getItem(userAvatarStorageKey);
-        if (storedAvatar) {
-            defaultUserAvatar = storedAvatar;
-        }
-    } catch (_error) {
-        defaultUserAvatar = builtInUserAvatar;
-    }
-    profilePreview.src = defaultUserAvatar;
+    await refreshAuthState();
+    syncHistoryBackdrop();
 
-    createConversationAndActivate();
+    if (!loadChatHistory()) {
+        if (authState.authenticated) {
+            createConversationAndActivate();
+        } else {
+            activeConversationId = null;
+            renderConversationList();
+            renderMessages();
+        }
+    } else {
+        renderConversationList();
+        renderMessages();
+        if (authState.authenticated) {
+            ensureChatReadyAfterLogin();
+        } else if (activeConversationId && !getActiveConversation()) {
+            activeConversationId = null;
+            renderConversationList();
+            renderMessages();
+        }
+    }
+
+    refreshUsageStatus();
 });

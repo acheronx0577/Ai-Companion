@@ -3,63 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#040404">
+    <meta name="color-scheme" content="dark">
     <title>WakuWaku</title>
     <link rel="icon" type="image/png" href="/static/images/char-mouth-closed.png">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        rel="preload"
+        as="style"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    </noscript>
 </head>
 <body>
+    <a class="skip-link" href="#chat-main">Skip to chat</a>
     <div class="app-shell sidebar-collapsed">
         <aside class="history-panel">
             <div class="history-header">
                 <div class="history-header-top">
                     <h1>WakuWaku</h1>
-                    <button id="toggle-history-button" type="button" aria-label="Collapse sidebar" title="Collapse sidebar">⟨</button>
+                    <button id="toggle-history-button" type="button" aria-label="Collapse sidebar" title="Collapse sidebar">
+                        <svg class="toggle-history-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                            <path d="M10 3.5 6 8l4 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
                 </div>
                 <button id="new-chat-button" type="button">New Chat</button>
             </div>
             <div id="conversation-list" class="conversation-list"></div>
             <div class="history-footer">
-                <p class="label">Profile</p>
-                <div class="profile-controls">
-                    <img id="profile-preview" src="/static/images/user-default.png" alt="User profile">
-                    <button id="change-profile-button" type="button">Change Picture</button>
-                    <input id="profile-upload-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+                <p class="label">Account</p>
+                <div id="auth-guest" class="auth-panel">
+                    <div class="auth-callout">
+                        <p class="auth-hint">Sign in with Google to chat with WakuWaku and use your daily trial messages.</p>
+                    </div>
+                    <a id="google-sign-in-button" class="google-sign-in-button" href="/auth/google">
+                        <span class="google-sign-in-icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="18" height="18">
+                                <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303C33.654 32.657 29.073 36 24 36c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.31 0 6.28 1.25 8.56 3.29l6.06-6.06C33.64 5.05 29.08 3 24 3 12.95 3 4 11.95 4 23s8.95 20 20 20 20-8.95 20-20c0-1.34-.14-2.65-.39-3.92z"/>
+                                <path fill="#FF3D00" d="M6.306 14.691l7.05 5.47C14.655 16.108 18.961 13 24 13c3.31 0 6.28 1.25 8.56 3.29l6.06-6.06C33.64 5.05 29.08 3 24 3 16.27 3 9.255 7.69 6.306 14.691z"/>
+                                <path fill="#4CAF50" d="M24 43c5.07 0 9.66-1.94 13.09-5.09l-6.06-6.06C29.28 33.75 26.31 35 24 35c-5.04 0-9.34-3.36-10.87-7.94l-7.05 5.47C9.255 40.31 16.27 45 24 45z"/>
+                                <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c1.14-3.36 1.14-7.13 0-10.42z"/>
+                            </svg>
+                        </span>
+                        <span>Sign in with Google</span>
+                    </a>
+                    <p id="auth-config-warning" class="auth-config-warning" hidden>
+                        Google sign-in is not configured on the server yet.
+                    </p>
                 </div>
-                <button id="delete-all-chats-button" type="button">Delete All Chats</button>
+                <div id="auth-user" class="auth-panel" hidden>
+                    <div class="profile-controls">
+                        <img id="profile-preview" alt="User profile" hidden>
+                        <div class="profile-identity">
+                            <p id="user-display-name" class="profile-name"></p>
+                            <p id="user-display-email" class="profile-email"></p>
+                        </div>
+                    </div>
+                    <div class="auth-actions">
+                        <button id="logout-button" type="button">Sign out</button>
+                        <button id="delete-all-chats-button" type="button">Delete all</button>
+                    </div>
+                </div>
             </div>
         </aside>
-        <div id="history-backdrop" class="history-backdrop"></div>
+        <div id="history-backdrop" class="history-backdrop" hidden aria-hidden="true"></div>
 
-        <main class="chat-stage">
+        <main id="chat-main" class="chat-stage">
             <header class="stage-header">
                 <div class="stage-header-main">
-                    <button id="mobile-history-toggle" type="button" aria-label="Open sidebar" title="Open sidebar">☰</button>
+                    <button id="mobile-history-toggle" type="button" aria-label="Open sidebar" title="Open sidebar">
+                        <svg class="mobile-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                            <path d="M2.5 4.25h11M2.5 8h11M2.5 11.75h11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                    </button>
                     <p class="label">AI Companion</p>
                     <h2 id="conversation-title">Conversation</h2>
                 </div>
                 <div class="voice-controls">
+                    <p id="usage-meter" class="usage-meter" aria-live="polite"></p>
                     <label for="voice-select">Voice</label>
                     <select id="voice-select"></select>
                 </div>
             </header>
 
-            <section class="stage-companion">
+            <section id="message-list" class="message-list" aria-live="polite" aria-busy="false" aria-label="Chat messages"></section>
+
+            <footer class="chat-input-area">
+                <label class="visually-hidden" for="text-input">Message to WakuWaku</label>
+                <textarea id="text-input" placeholder="Ask me anything..." autocomplete="off" rows="1"></textarea>
+                <div class="send-button-wrap">
+                    <button id="send-button" type="button" aria-label="Send message">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24px" height="24px" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                    </button>
+                    <button id="stop-button" type="button" hidden aria-label="Stop speaking">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24px" height="24px" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>
+                    </button>
+                </div>
+            </footer>
+
+            <aside class="companion-panel" aria-label="Companion character">
+                <p class="label companion-panel-label">WakuWaku</p>
                 <div class="character-viewer">
                     <img id="character-image" src="/static/images/char-mouth-closed.png" alt="WakuWaku">
                 </div>
-            </section>
-
-            <section id="message-list" class="message-list" aria-live="polite"></section>
-
-            <footer class="chat-input-area">
-                <textarea id="text-input" placeholder="Ask me anything..."></textarea>
-                <button id="send-button" type="button" aria-label="Send message">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="24px" height="24px"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-                </button>
-            </footer>
+            </aside>
         </main>
 
     </div>
