@@ -1,8 +1,11 @@
-# Railway/Nixpacks — do NOT override [phases.setup] without "..." or pip/venv won't exist.
-# See: https://nixpacks.com/docs/guides/configuring-builds
+# Fallback only if Railway builder is NIXPACKS (not recommended).
+# Preferred: railway.json → builder DOCKERFILE + Dockerfile
+#
+# Do not add [phases.setup] unless you include "..." — see RAILWAY.md
+
 [variables]
 NIXPACKS_PYTHON_VERSION = "3.12"
 
-# Default python provider creates /opt/venv with pip; only swap requirements file.
 [phases.install]
-cmds = ["/opt/venv/bin/pip install -r requirements-railway.txt"]
+# Must use venv pip path; plain "pip" is not on PATH in the install layer.
+cmds = ["/opt/venv/bin/python -m pip install -r requirements-railway.txt"]

@@ -50,6 +50,31 @@ python scripts/check_deploy_env.py
 
 ---
 
+## Which builder are you using?
+
+| Log sign | Builder | What to do |
+|----------|---------|------------|
+| `using build driver nixpacks` / `stage-0 6/8` / `nix-env` | **NIXPACKS** | Switch to **Dockerfile** (below) or use fixed `nixpacks.toml` |
+| `[1/6] FROM python:3.12-slim-bookworm` | **Dockerfile** | Correct |
+
+### `UndefinedVar: $NIXPACKS_PATH` (line 18)
+
+Harmless **warning** from Nixpacks’ generated Dockerfile on Railway Metal builder. It is **not** why the build failed unless the build stops right there.
+
+### `pip: command not found` (Nixpacks)
+
+Nixpacks ran `pip install` without `/opt/venv/bin/` — no pip on global PATH. Repo `nixpacks.toml` now uses `/opt/venv/bin/python -m pip`.
+
+**Best fix:** use Dockerfile instead of Nixpacks:
+
+1. Railway → service → **Settings** → **Build**
+2. **Builder** → **Dockerfile**
+3. **Dockerfile path** → `Dockerfile`
+4. Remove / leave empty any **Nixpacks config path** override
+5. Redeploy from GitHub (ensure `railway.json` is pushed)
+
+---
+
 ## Phase 1 — Connect Railway (YOU + push)
 
 **Code status:** Ready — uses `requirements-railway.txt` (faster build, no Gemini/Piper on server).
