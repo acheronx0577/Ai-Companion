@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import os
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -254,3 +256,23 @@ def get_piper_voice(voice_id: str | None = None):
         )
         _voice_cache[resolved_id] = loaded
         return loaded
+
+
+def synthesize_text_to_wav(voice, text: str) -> bytes | None:
+    """Synthesize text to WAV bytes. Returns None when Piper yields no audio (e.g. '.')."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return None
+    buffer = io.BytesIO()
+    wrote_audio = False
+    with wave.open(buffer, "wb") as wav_file:
+        for chunk in voice.synthesize(cleaned):
+            if not wrote_audio:
+                wav_file.setframerate(chunk.sample_rate)
+                wav_file.setsampwidth(chunk.sample_width)
+                wav_file.setnchannels(chunk.sample_channels)
+                wrote_audio = True
+            wav_file.writeframes(chunk.audio_int16_bytes)
+    if not wrote_audio:
+        return None
+    return buffer.getvalue()

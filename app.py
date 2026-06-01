@@ -2,7 +2,6 @@
 
 import io
 import os
-import wave
 from pathlib import Path
 from urllib.parse import quote
 
@@ -33,6 +32,7 @@ from piper_voices import (
     list_piper_voice_menu,
     max_loaded_piper_voices,
     piper_disabled,
+    synthesize_text_to_wav,
     voice_files_present,
 )
 
@@ -546,13 +546,17 @@ def tts():
     if voice is None:
         return jsonify({"error": "Piper voice unavailable"}), 503
 
-    wav_buffer = io.BytesIO()
-    with wave.open(wav_buffer, "wb") as wav_file:
-        voice.synthesize_wav(text, wav_file)
-    wav_buffer.seek(0)
+    try:
+        wav_bytes = synthesize_text_to_wav(voice, text)
+    except Exception:
+        app.logger.exception("Piper synthesis failed for voice %s", voice_id)
+        return jsonify({"error": "Piper synthesis failed"}), 503
+
+    if not wav_bytes:
+        return jsonify({"error": "Piper produced no audio for this text"}), 400
 
     return send_file(
-        wav_buffer,
+        io.BytesIO(wav_bytes),
         mimetype="audio/wav",
         as_attachment=False,
         download_name="tts.wav",

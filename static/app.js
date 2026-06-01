@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c0';
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260601c1';
     const GUEST_USAGE_METER_TEXT = 'Sign in for daily trial messages.';
     const MAX_MESSAGE_WORDS = 100;
     const SUPPORTED_CHAT_LANGUAGES = new Set([
@@ -2522,7 +2522,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         piperWarmupVoiceId = voiceId;
-        void fetchPiperAudioBlob('.', voiceId).catch(() => {
+        // Piper/espeak does not synthesize "." (empty audio); use a short real word.
+        void fetchPiperAudioBlob('Hi', voiceId).catch(() => {
             if (piperWarmupVoiceId === voiceId) {
                 piperWarmupVoiceId = null;
             }
