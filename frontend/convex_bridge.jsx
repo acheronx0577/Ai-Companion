@@ -68,6 +68,7 @@ function BridgeInner() {
   const authToken = useAuthToken();
   const profile = useQuery(api.users.me);
   const usage = useQuery(api.usage.status);
+  const siteViews = useQuery(api.siteViews.get);
   const upsert = useMutation(api.users.upsertFromAuth);
 
   useEffect(() => {
@@ -112,8 +113,9 @@ function BridgeInner() {
     snapshot.convexConfigured = true;
     snapshot.user = isAuthenticated ? profileToUser(profile) : null;
     snapshot.usage = usage ?? null;
+    snapshot.siteViews = siteViews ?? null;
     notify();
-  }, [isLoading, isAuthenticated, profile, usage]);
+  }, [isLoading, isAuthenticated, profile, usage, siteViews]);
 
   return null;
 }

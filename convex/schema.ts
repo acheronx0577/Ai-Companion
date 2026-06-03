@@ -52,4 +52,9 @@ export default defineSchema({
     content: v.string(),
     createdAt: v.number(),
   }).index("by_session", ["sessionId", "createdAt"]),
+
+  siteViews: defineTable({
+    key: v.string(),
+    count: v.number(),
+  }).index("by_key", ["key"]),
 });

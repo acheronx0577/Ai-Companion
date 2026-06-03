@@ -418,6 +418,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (snap.usage) {
             applyUsageState(snap.usage);
         }
+        if (snap.siteViews !== null && snap.siteViews !== undefined) {
+            if (metricViews) {
+                metricViews.textContent = formatViewCount(snap.siteViews);
+            }
+        }
         renderAuthUi();
         if (snap.authenticated && snap.user) {
             if (snap.user.id !== lastSyncedUserId) {

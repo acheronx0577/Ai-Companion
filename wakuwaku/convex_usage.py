@@ -96,3 +96,47 @@ def fetch_verified_profile_via_convex(bearer_token: str) -> dict:
     if not isinstance(user, dict) or not user.get("id"):
         raise ValueError("Convex profile response missing user object")
     return user
+
+
+def use_convex_views() -> bool:
+    """When true, we try to store page views in Convex instead of local JSON."""
+    import sys
+    # Avoid real network requests during unit testing
+    if "unittest" in sys.argv[0] or "pytest" in sys.modules:
+        return False
+    _load_convex_env()
+    return bool(os.environ.get("CONVEX_SITE_URL", "").strip())
+
+
+def get_convex_json_public(path: str) -> dict:
+    """GET public JSON from a Convex HTTP action without a bearer token."""
+    site = convex_site_url()
+    if not site:
+        raise ValueError("CONVEX_SITE_URL is not set.")
+    url = f"{site}{path}"
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as error:
+        raise ValueError(f"Convex public GET request failed: {error}") from error
+
+
+def post_convex_json_public(path: str, body: dict | None = None) -> dict:
+    """POST public JSON to a Convex HTTP action without a bearer token."""
+    site = convex_site_url()
+    if not site:
+        raise ValueError("CONVEX_SITE_URL is not set.")
+    url = f"{site}{path}"
+    data = json.dumps(body or {}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as error:
+        raise ValueError(f"Convex public POST request failed: {error}") from error
