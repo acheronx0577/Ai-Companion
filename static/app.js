@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260602s01';
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260603s05';
     const PIPER_WARMUP_LOADING_MESSAGE =
         'Loading English voice engine… Demo warmup takes at least 30 seconds.';
     const PIPER_WARMUP_DONE_MESSAGE = 'Voice engine ready! You can start chatting now.';
@@ -3390,14 +3390,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         return runExclusivePiperVoice(() => playPiperNdjsonStream(text, piperVoiceId, speechId));
     }
 
-    async function speak(text) {
+    async function speak(text, { cancelCurrent = true } = {}) {
         const normalized = (text || '').trim();
         if (!normalized) {
             return;
         }
 
         // Keep browser TTS alive after Send priming — cancel only on explicit Stop.
-        stopAllSpeech({ cancelBrowserTts: false });
+        if (cancelCurrent) {
+            stopAllSpeech({ cancelBrowserTts: false });
+        }
         const speechId = activeSpeechId;
         speechInProgress = true;
         updateAssistantControls();
@@ -3441,6 +3443,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function firstSpeakablePrefix(text) {
+        const normalized = (text || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) {
+            return '';
+        }
+        const sentence = normalized.match(/^(.{12,220}?[.!?。！？…])(?:\s|$)/);
+        if (sentence?.[1]) {
+            return sentence[1].trim();
+        }
+        if (normalized.length < 90) {
+            return '';
+        }
+        const splitAt = normalized.lastIndexOf(' ', 90);
+        return normalized.slice(0, splitAt > 45 ? splitAt : 90).trim();
+    }
+
+    function remainingAfterPrefix(text, prefix) {
+        const normalizedText = (text || '').replace(/\s+/g, ' ').trim();
+        const normalizedPrefix = (prefix || '').replace(/\s+/g, ' ').trim();
+        if (!normalizedPrefix || !normalizedText.startsWith(normalizedPrefix)) {
+            return normalizedText;
+        }
+        return normalizedText.slice(normalizedPrefix.length).trim();
+    }
+
     async function handleSendMessage() {
         const message = textInput.value.trim();
         const conversation = getActiveConversation();
@@ -3479,6 +3506,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateAssistantControls();
 
         let responseText = '';
+        let earlySpeechText = '';
+        let earlySpeechPromise = null;
 
         try {
             const chatHeaders = {
@@ -3527,6 +3556,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 if (event.delta) {
                     responseText += event.delta;
+                    if (
+                        !earlySpeechPromise
+                        && shouldUsePiperTts()
+                        && speechId === activeSpeechId
+                    ) {
+                        const prefix = firstSpeakablePrefix(responseText);
+                        if (prefix) {
+                            earlySpeechText = prefix;
+                            earlySpeechPromise = speak(prefix, { cancelCurrent: false });
+                        }
+                    }
                 }
             });
 
@@ -3578,7 +3618,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             appendMessage('ai', finalText);
             activeChatAbortController = null;
             if (speechId === activeSpeechId) {
-                await speak(finalText);
+                if (earlySpeechPromise) {
+                    await earlySpeechPromise;
+                    const remainingText = remainingAfterPrefix(finalText, earlySpeechText);
+                    if (remainingText && speechId === activeSpeechId) {
+                        await speak(remainingText, { cancelCurrent: false });
+                    }
+                } else {
+                    await speak(finalText);
+                }
             }
         } catch (error) {
             if (error.name === 'AbortError') {
