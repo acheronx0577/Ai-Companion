@@ -7,6 +7,8 @@ import sys
 import time
 from typing import Any
 
+from .site_views import get_site_view_count
+
 _PROCESS_START = time.monotonic()
 _PREV_CPU: tuple[int, float] | None = None
 
@@ -93,6 +95,7 @@ def system_stats_payload(
     uptime_sec = int(time.monotonic() - _PROCESS_START)
 
     return {
+        "viewCount": get_site_view_count(),
         "cpuPercent": cpu,
         "memoryMb": rss_mb,
         "memoryLimitMb": limit_mb,

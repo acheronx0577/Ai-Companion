@@ -13,6 +13,7 @@ class SystemStatsTests(unittest.TestCase):
         self.assertIn("memoryPercent", data)
         self.assertIn("memoryLimitMb", data)
         self.assertIn("uptimeSec", data)
+        self.assertIn("viewCount", data)
         self.assertTrue(data["piperModelLoaded"])
         self.assertGreaterEqual(data["memoryMb"], 0)
 
@@ -26,6 +27,7 @@ class SystemStatsTests(unittest.TestCase):
         data = response.get_json()
         self.assertIn("cpuPercent", data)
         self.assertIn("memoryMb", data)
+        self.assertIn("viewCount", data)
 
 
 if __name__ == "__main__":

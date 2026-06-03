@@ -249,6 +249,51 @@ body {
     overflow: hidden;
 }
 
+.server-metrics-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.website-view-pill {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.55rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 0.45rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(212, 232, 232, 0.06);
+    color: var(--text-main);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.website-view-pill-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-subtle);
+    font-weight: 500;
+}
+
+.website-view-pill-value {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-main);
+}
+
 .server-metrics {
     border: 1px solid var(--line);
     border-radius: 10px;

@@ -30,13 +30,22 @@
             </div>
             <div id="conversation-list" class="conversation-list"></div>
             <div id="history-panel-hub" class="history-panel-hub">
-                <section
-                    class="server-metrics"
-                    id="server-metrics"
-                    aria-label="Server resource usage"
-                    aria-live="polite">
-                    <p class="label server-metrics-label">Server</p>
-                    <dl class="server-metrics-grid">
+                <div class="server-metrics-stack">
+                    <div
+                        class="website-view-pill"
+                        id="website-view-pill"
+                        aria-label="Website views"
+                        aria-live="polite">
+                        <span class="website-view-pill-label">Website view</span>
+                        <span id="metric-views" class="website-view-pill-value">{{ "{:,}".format(site_view_count) }}</span>
+                    </div>
+                    <section
+                        class="server-metrics"
+                        id="server-metrics"
+                        aria-label="Server resource usage"
+                        aria-live="polite">
+                        <p class="label server-metrics-label">Server</p>
+                        <dl class="server-metrics-grid">
                         <div class="server-metrics-row">
                             <dt>CPU</dt>
                             <dd id="metric-cpu">—</dd>
@@ -53,8 +62,9 @@
                             <dt>Uptime</dt>
                             <dd id="metric-uptime">—</dd>
                         </div>
-                    </dl>
-                </section>
+                        </dl>
+                    </section>
+                </div>
                 <a
                     id="github-repo-link"
                     class="github-pill"

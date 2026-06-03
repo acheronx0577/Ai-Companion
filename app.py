@@ -47,6 +47,7 @@ from wakuwaku.usage_limit import (
 from wakuwaku.request_security import check_rate_limit, same_origin_request_allowed
 
 from wakuwaku import app_config
+from wakuwaku.site_views import get_site_view_count, record_site_view
 from wakuwaku.system_stats import system_stats_payload
 from wakuwaku.piper_voices import (
     DEVICE_LANGS_ALWAYS,
@@ -256,6 +257,13 @@ def convex_frontend_enabled() -> bool:
 def index():
     load_dotenv(".env.local")
     convex_url = os.environ.get("CONVEX_URL", "").strip()
+    view_rate = check_rate_limit(
+        "site-view", max_requests=120, window_seconds=3600, include_user=False
+    )
+    if view_rate.allowed:
+        site_view_count = record_site_view()
+    else:
+        site_view_count = get_site_view_count()
     return render_template(
         "index.html",
         convex_url=convex_url,
@@ -263,6 +271,7 @@ def index():
         authenticated=user_is_authenticated(),
         asset_version=app_config.ASSET_VERSION,
         github_repo_url=app_config.GITHUB_REPO_URL,
+        site_view_count=site_view_count,
     )
 
 

@@ -139,6 +139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const historyBackdrop = document.getElementById('history-backdrop');
     const conversationTitle = document.getElementById('conversation-title');
     const usageMeter = document.getElementById('usage-meter');
+    const metricViews = document.getElementById('metric-views');
     const metricCpu = document.getElementById('metric-cpu');
     const metricMemory = document.getElementById('metric-memory');
     const metricPiper = document.getElementById('metric-piper');
@@ -4153,9 +4154,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function formatViewCount(value) {
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+            return '—';
+        }
+        return Math.round(value).toLocaleString();
+    }
+
     function updateServerMetricsPanel(data) {
         if (!data) {
             return;
+        }
+        if (metricViews) {
+            metricViews.textContent = formatViewCount(data.viewCount);
         }
         if (metricCpu) {
             const cpu = data.cpuPercent;
