@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PRODUCTION=1 \
-    PIPER_MAX_LOADED_VOICES=1
+    PIPER_MAX_LOADED_VOICES=1 \
+    PIP_ROOT_USER_ACTION=ignore
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 \
