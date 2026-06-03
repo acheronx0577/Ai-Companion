@@ -39,7 +39,7 @@ BROWSER_VOICE_MENU: tuple[dict[str, str], ...] = (
     {
         "lang": "en",
         "locale": "en-US",
-        "label": "English Device Voice (en-US)",
+        "label": "Microsoft English Device Voice (en-US)",
     },
     {
         "lang": "ja",

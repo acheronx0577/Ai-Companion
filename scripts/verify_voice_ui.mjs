@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Static checks for voice combobox layout and Microsoft English voice filtering. */
+/** Static checks for voice combobox layout and Microsoft English voice preference. */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,8 +33,8 @@ requireIn("static/app.js", "app.js", [
   "const GUEST_USAGE_METER_TEXT = ",
   guestCopy,
   "function isExcludedVoice(voice)",
-  "normalizedName.includes('microsoft')",
-  "normalizedLang.startsWith('en')",
+  "function isMicrosoftVoice(voice)",
+  "microsoftVoices.length ? microsoftVoices : matches",
   "voice.voiceURI",
   "piperCatalogVoices",
   "piperVoices",
@@ -44,7 +44,7 @@ requireIn("wakuwaku/piper_voices.py", "wakuwaku/piper_voices.py", [
   "en_US-hfc_female-medium",
   "DEVICE_LANGS_ALWAYS",
   "Japanese Device Voice",
-  "English Device Voice",
+  "Microsoft English Device Voice",
 ]);
 forbidIn("wakuwaku/piper_voices.py", "wakuwaku/piper_voices.py", [
   "es_AR-daniela-high",

@@ -41,6 +41,8 @@ class PiperVoiceCatalogTests(unittest.TestCase):
     def test_browser_menu_english_and_japanese(self):
         langs = {entry["lang"] for entry in BROWSER_VOICE_MENU}
         self.assertEqual(langs, {"en", "ja"})
+        labels = {entry["lang"]: entry["label"] for entry in BROWSER_VOICE_MENU}
+        self.assertIn("Microsoft English", labels["en"])
         self.assertEqual(DEVICE_LANGS_ALWAYS, frozenset({"ja"}))
 
     def test_browser_menu_keeps_english_when_piper_installed(self):
