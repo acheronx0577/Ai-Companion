@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', async () => {
-    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260603s05';
+    const ASSET_VERSION = document.documentElement.dataset.assetVersion || '20260603s06';
     const PIPER_WARMUP_LOADING_MESSAGE =
         'Loading English voice engine… Demo warmup takes at least 30 seconds.';
     const PIPER_WARMUP_DONE_MESSAGE = 'Voice engine ready! You can start chatting now.';
@@ -216,7 +216,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const chatHistoryStorageKey = 'wakuwaku.chatHistory';
     const voicePreferenceStorageKey = 'wakuwaku.voicePreference';
     const voicePreferenceVersionKey = 'wakuwaku.voicePreferenceVersion';
-    const VOICE_PREFERENCE_VERSION = 4;
+    const VOICE_PREFERENCE_VERSION = 5;
+    const DEFAULT_DEVICE_VOICE_LANG = 'en';
+    const DEFAULT_DEVICE_VOICE_LABEL_HINT = 'microsoft english';
     const piperSessionWarmKey = 'wakuwaku.piperSessionWarm';
     let authState = {
         authenticated: !appShell || !appShell.classList.contains('requires-auth'),
@@ -2495,6 +2497,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return false;
     }
 
+    function browserMenuEntryMatchesDefaultDeviceVoice(entry) {
+        const lang = normalizeChatLanguage(entry?.lang || '');
+        const label = (entry?.label || '').toLowerCase();
+        return (
+            lang === DEFAULT_DEVICE_VOICE_LANG
+            && label.includes(DEFAULT_DEVICE_VOICE_LABEL_HINT)
+        );
+    }
+
     function applyDefaultVoiceSelection({
         piperReadyVoices,
         browserVoiceMenu,
@@ -2507,7 +2518,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (saved && restoreVoiceSelection(saved)) {
             return;
         }
-        const englishDeviceIndex = browserVoiceMenu.findIndex((entry) => entry.lang === 'en');
+        const defaultDeviceIndex = browserVoiceMenu.findIndex(
+            browserMenuEntryMatchesDefaultDeviceVoice
+        );
+        if (defaultDeviceIndex >= 0) {
+            voiceSelect.selectedIndex = piperReadyVoices.length + defaultDeviceIndex;
+            return;
+        }
+        const englishDeviceIndex = browserVoiceMenu.findIndex(
+            (entry) => normalizeChatLanguage(entry.lang) === DEFAULT_DEVICE_VOICE_LANG
+        );
         if (englishDeviceIndex >= 0) {
             voiceSelect.selectedIndex = piperReadyVoices.length + englishDeviceIndex;
             return;
